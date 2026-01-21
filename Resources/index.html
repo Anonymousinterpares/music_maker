@@ -3,115 +3,210 @@
 <head>
     <style>
         :root {
-            --bg-color: #2b2b2b;
+            --bg-color: #1a1a1a;
+            --panel-color: #2d2d2d;
             --key-white: #efefef;
             --key-black: #333;
             --accent: #00ff99;
             --text-color: #ddd;
+            --knob-bg: #444;
         }
         body { 
             background: var(--bg-color); 
             color: var(--text-color); 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            font-family: 'Segoe UI', sans-serif; 
             text-align: center; 
             margin: 0; 
             overflow: hidden;
             user-select: none;
         }
-        h1 { font-weight: 300; letter-spacing: 2px; margin-top: 20px; color: var(--accent); }
-        .keyboard-container {
+        header { padding: 20px; background: #111; border-bottom: 2px solid var(--accent); }
+        h1 { margin: 0; font-weight: 300; letter-spacing: 4px; font-size: 1.5em; color: var(--accent); }
+        
+        .main-container { display: flex; flex-direction: column; height: 100vh; }
+
+        .controls-panel {
             display: flex;
             justify-content: center;
-            padding: 20px;
-            margin-top: 30px;
+            gap: 40px;
+            padding: 30px;
+            background: var(--panel-color);
+            margin: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .control-group { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+        .control-label { font-size: 0.7em; font-weight: bold; text-transform: uppercase; color: #888; }
+        
+        input[type=range] {
+            writing-mode: bt-lr; /* Vertical range */
+            appearance: none;
+            width: 6px;
+            height: 100px;
+            background: #111;
+            outline: none;
+            border-radius: 3px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 10px;
+            background: var(--accent);
+            cursor: pointer;
+            border-radius: 2px;
+        }
+
+        select {
+            background: #111;
+            color: var(--accent);
+            border: 1px solid #444;
+            padding: 5px 10px;
+            border-radius: 4px;
+            outline: none;
+        }
+
+        .keyboard-container {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding-bottom: 40px;
         }
         .keyboard { 
             display: flex; 
             position: relative;
-            height: 250px;
-            background: #111;
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            height: 200px;
+            background: #000;
+            padding: 8px;
+            border-radius: 4px;
         }
         .key { 
-            width: 50px; 
-            height: 230px; 
-            border: 1px solid #999; 
+            width: 40px; 
+            height: 180px; 
+            border: 1px solid #777; 
             background: var(--key-white); 
             cursor: pointer; 
-            border-radius: 0 0 5px 5px; 
+            border-radius: 0 0 3px 3px; 
             position: relative;
-            transition: background 0.1s;
         }
         .key.black { 
             background: var(--key-black); 
-            width: 34px; 
-            height: 140px; 
-            margin-left: -17px; 
-            margin-right: -17px; 
+            width: 28px; 
+            height: 110px; 
+            margin-left: -14px; 
+            margin-right: -14px; 
             z-index: 2; 
             border-color: #000; 
         }
-        .key.active { background: var(--accent) !important; box-shadow: inset 0 0 10px rgba(0,0,0,0.3); }
-        #status { margin-top: 40px; font-size: 0.9em; color: #888; text-transform: uppercase; letter-spacing: 1px; }
-        .controls { margin-top: 20px; }
+        .key.active { background: var(--accent) !important; }
+        
+        #status-bar { 
+            background: #111; 
+            padding: 5px; 
+            font-size: 0.7em; 
+            color: #555; 
+            text-align: left; 
+            padding-left: 20px;
+        }
     </style>
 </head>
 <body>
-    <h1>MUSIC MAKER HYBRID</h1>
-    
-    <div class="keyboard-container">
-        <div class="keyboard" id="kb"></div>
-    </div>
+    <div class="main-container">
+        <header>
+            <h1>HYBRID POLY-SYNTH</h1>
+        </header>
 
-    <div class="controls">
-        <p id="status">INITIALIZING BRIDGE...</p>
+        <div class="controls-panel">
+            <div class="control-group">
+                <span class="control-label">Oscillator</span>
+                <select id="osc-type" onchange="updateParams()">
+                    <option value="0">Sine</option>
+                    <option value="1" selected>Sawtooth</option>
+                    <option value="2">Square</option>
+                    <option value="3">Triangle</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <span class="control-label">Cutoff</span>
+                <input type="range" id="cutoff" min="20" max="15000" value="2000" oninput="updateParams()">
+                <span id="cutoff-val" style="font-size: 0.6em">2000 Hz</span>
+            </div>
+            <div class="control-group">
+                <span class="control-label">Resonance</span>
+                <input type="range" id="res" min="0.1" max="10" step="0.1" value="0.7" oninput="updateParams()">
+                <span id="res-val" style="font-size: 0.6em">0.7</span>
+            </div>
+        </div>
+        
+        <div class="keyboard-container">
+            <div class="keyboard" id="kb"></div>
+        </div>
+
+        <div id="status-bar">BRIDGE: <span id="bridge-status">OFFLINE</span> | LAST MIDI: <span id="midi-status">-</span></div>
     </div>
 
     <script>
         const kb = document.getElementById('kb');
-        const status = document.getElementById('status');
+        const bridgeStatus = document.getElementById('bridge-status');
+        const midiStatus = document.getElementById('midi-status');
         
-        // C3 to C5
         const startNote = 48; 
         const numNotes = 25; 
-        const blackKeys = [1, 3, 6, 8, 10]; // Indices in an octave
+        const blackKeys = [1, 3, 6, 8, 10];
+        const keyMap = {};
 
         for (let i = 0; i < numNotes; i++) {
             const note = startNote + i;
-            const octaveIndex = i % 12;
-            const isBlack = blackKeys.includes(octaveIndex);
-            
+            const isBlack = blackKeys.includes(i % 12);
             const k = document.createElement('div');
             k.className = 'key' + (isBlack ? ' black' : '');
             k.dataset.note = note;
-            
-            const playNote = (v) => {
-                k.classList.toggle('active', v > 0);
-                if (window.__JUCE__ && window.__JUCE__.backend) {
+            keyMap[note] = k;
+
+            const trigger = (v) => {
+                if (window.__JUCE__) {
                     window.__JUCE__.backend.emitEvent('playNoteEvent', {note: note, velocity: v});
-                    status.innerText = v > 0 ? `NOTE ON: ${note}` : "READY";
                 }
             };
 
-            k.onmousedown = (e) => { e.preventDefault(); playNote(0.8); };
-            k.onmouseup = () => playNote(0);
-            k.onmouseleave = () => { if (k.classList.contains('active')) playNote(0); };
-            
-            // Touch support
-            k.ontouchstart = (e) => { e.preventDefault(); playNote(0.8); };
-            k.ontouchend = () => playNote(0);
-
+            k.onmousedown = (e) => { e.preventDefault(); trigger(0.8); k.classList.add('active'); };
+            k.onmouseup = () => { trigger(0); k.classList.remove('active'); };
+            k.onmouseleave = () => { if (k.classList.contains('active')) { trigger(0); k.classList.remove('active'); } };
             kb.appendChild(k);
         }
 
+        function updateParams() {
+            const osc = document.getElementById('osc-type').value;
+            const cutoff = document.getElementById('cutoff').value;
+            const res = document.getElementById('res').value;
+            
+            document.getElementById('cutoff-val').innerText = cutoff + " Hz";
+            document.getElementById('res-val').innerText = res;
+
+            if (window.__JUCE__ && window.__JUCE__.backend) {
+                window.__JUCE__.backend.setParam("osc", parseFloat(osc));
+                window.__JUCE__.backend.setParam("cutoff", parseFloat(cutoff));
+                window.__JUCE__.backend.setParam("res", parseFloat(res));
+            }
+        }
+
+        window.onMidiIn = (msg) => {
+            const note = msg.note;
+            const vel = msg.velocity;
+            const key = keyMap[note];
+            if (key) {
+                if (vel > 0) key.classList.add('active');
+                else         key.classList.remove('active');
+            }
+            midiStatus.innerText = `Note ${note} (${vel > 0 ? 'ON' : 'OFF'})`;
+        };
+
         function checkBridge() {
             if (window.__JUCE__ && window.__JUCE__.backend) {
-                status.innerText = "BRIDGE ONLINE - SYNTH READY";
-            } else {
-                setTimeout(checkBridge, 100);
-            }
+                bridgeStatus.innerText = "ONLINE";
+                bridgeStatus.style.color = "var(--accent)";
+            } else { setTimeout(checkBridge, 100); }
         }
         checkBridge();
     </script>

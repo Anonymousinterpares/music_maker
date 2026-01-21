@@ -38,9 +38,21 @@ public:
         for (int sample = 0; sample < numSamples; ++sample)
         {
             auto envelopeValue = adsr.getNextSample();
+            float rawSample = 0.0f;
+
+            switch (oscType)
+            {
+                case 0: rawSample = (float) std::sin (currentAngle); break; // Sine
+                case 1: rawSample = (float) ((currentAngle / juce::MathConstants<double>::pi) - 1.0); break; // Saw
+                case 2: rawSample = currentAngle < juce::MathConstants<double>::pi ? 1.0f : -1.0f; break; // Square
+                case 3: rawSample = (float) (2.0 * std::abs (2.0 * (currentAngle / juce::MathConstants<double>::twoPi) - 1.0) - 1.0); break; // Triangle
+                default: break;
+            }
+
+            auto sampleValue = rawSample * level * envelopeValue;
             
-            // Sawtooth: (2.0 * angle / 2PI) - 1.0
-            auto sampleValue = (float) (((currentAngle / juce::MathConstants<double>::pi) - 1.0) * level * envelopeValue);
+            // Apply filter to each sample (simplified for MVP)
+            sampleValue = filter.processSample (0, sampleValue);
             
             for (int channel = 0; channel < outputBuffer.getNumChannels(); ++channel)
                 outputBuffer.addSample (channel, startSample + sample, sampleValue);
@@ -54,18 +66,31 @@ public:
     void prepare (double sampleRate)
     {
         adsr.setSampleRate (sampleRate);
-        juce::ADSR::Parameters params;
-        params.attack = 0.05f;
-        params.decay = 0.1f;
-        params.sustain = 0.8f;
-        params.release = 0.5f;
-        adsr.setParameters (params);
+        juce::ADSR::Parameters adsrParams;
+        adsrParams.attack = 0.05f;
+        adsrParams.decay = 0.1f;
+        adsrParams.sustain = 0.8f;
+        adsrParams.release = 0.5f;
+        adsr.setParameters (adsrParams);
+
+        juce::dsp::ProcessSpec spec { sampleRate, 512, 2 };
+        filter.prepare (spec);
+        filter.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
+    }
+
+    void updateParameters (int type, float cutoff, float resonance)
+    {
+        oscType = type;
+        filter.setCutoffFrequency (juce::jlimit (20.0f, 20000.0f, cutoff));
+        filter.setResonance (juce::jlimit (0.1f, 10.0f, resonance));
     }
 
 private:
     juce::ADSR adsr;
+    juce::dsp::StateVariableTPTFilter<float> filter;
     double currentAngle = 0.0, angleDelta = 0.0;
     float level = 0.0f;
+    int oscType = 1; // Default Saw
 };
 
 // A simple Synthesizer Sound
@@ -76,7 +101,7 @@ struct SynthSound : public juce::SynthesiserSound
     bool appliesToChannel (int) override { return true; }
 };
 
-class MainComponent  : public juce::AudioAppComponent
+class MainComponent  : public juce::AudioAppComponent, public juce::MidiInputCallback
 {
 public:
     MainComponent();
@@ -89,12 +114,19 @@ public:
     void paint (juce::Graphics& g) override;
     void resized() override;
 
+    // MidiInputCallback
+    void handleIncomingMidiMessage (juce::MidiInput* source, const juce::MidiMessage& message) override;
+
 private:
-    juce::TextButton nativeBtn;
     std::unique_ptr<juce::WebBrowserComponent> webBrowser;
     
     // Synth Core
     juce::Synthesiser synth;
+    float currentCutoff = 2000.0f;
+    float currentRes = 0.7f;
+    int currentOscType = 1;
+
+    void updateSynthParams();
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };
