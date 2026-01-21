@@ -9,7 +9,7 @@
             --key-black: #333;
             --accent: #00ff99;
             --text-color: #ddd;
-            --knob-bg: #444;
+            --input-bg: #111;
         }
         body { 
             background: var(--bg-color); 
@@ -20,50 +20,78 @@
             overflow: hidden;
             user-select: none;
         }
-        header { padding: 20px; background: #111; border-bottom: 2px solid var(--accent); }
-        h1 { margin: 0; font-weight: 300; letter-spacing: 4px; font-size: 1.5em; color: var(--accent); }
+        header { padding: 10px; background: #111; border-bottom: 2px solid var(--accent); }
+        h1 { margin: 0; font-weight: 300; letter-spacing: 4px; font-size: 1.1em; color: var(--accent); }
         
         .main-container { display: flex; flex-direction: column; height: 100vh; }
 
         .controls-panel {
             display: flex;
-            justify-content: center;
-            gap: 40px;
-            padding: 30px;
+            flex-direction: column;
+            gap: 15px;
+            padding: 15px;
             background: var(--panel-color);
-            margin: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            margin: 10px;
+            border-radius: 8px;
         }
 
-        .control-group { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-        .control-label { font-size: 0.7em; font-weight: bold; text-transform: uppercase; color: #888; }
-        
-        input[type=range] {
-            writing-mode: bt-lr; /* Vertical range */
-            appearance: none;
-            width: 6px;
-            height: 100px;
-            background: #111;
-            outline: none;
-            border-radius: 3px;
+        .control-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: rgba(0,0,0,0.2);
+            padding: 10px;
+            border-radius: 4px;
         }
-        input[type=range]::-webkit-slider-thumb {
-            appearance: none;
-            width: 20px;
-            height: 10px;
-            background: var(--accent);
+
+        .label-group {
+            width: 120px;
+            text-align: left;
+        }
+
+        .control-label { font-size: 0.75em; font-weight: bold; text-transform: uppercase; color: #888; display: block; }
+        .hint { font-size: 0.6em; color: #555; }
+
+        .interaction-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-grow: 1;
+        }
+
+        button {
+            background: #444;
+            color: white;
+            border: none;
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
             cursor: pointer;
-            border-radius: 2px;
+            font-weight: bold;
+        }
+        button:active { background: var(--accent); color: black; }
+
+        input[type=range] { flex-grow: 1; height: 20px; }
+
+        input[type=number] {
+            background: var(--input-bg);
+            color: var(--accent);
+            border: 1px solid #444;
+            width: 70px;
+            padding: 5px;
+            border-radius: 4px;
+            text-align: center;
+            font-family: monospace;
         }
 
         select {
-            background: #111;
+            background: var(--input-bg);
             color: var(--accent);
             border: 1px solid #444;
-            padding: 5px 10px;
+            padding: 5px;
             border-radius: 4px;
-            outline: none;
+            width: 120px;
         }
 
         .keyboard-container {
@@ -71,86 +99,88 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            padding-bottom: 40px;
+            padding-bottom: 10px;
         }
-        .keyboard { 
-            display: flex; 
-            position: relative;
-            height: 200px;
-            background: #000;
-            padding: 8px;
-            border-radius: 4px;
-        }
-        .key { 
-            width: 40px; 
-            height: 180px; 
-            border: 1px solid #777; 
-            background: var(--key-white); 
-            cursor: pointer; 
-            border-radius: 0 0 3px 3px; 
-            position: relative;
-        }
-        .key.black { 
-            background: var(--key-black); 
-            width: 28px; 
-            height: 110px; 
-            margin-left: -14px; 
-            margin-right: -14px; 
-            z-index: 2; 
-            border-color: #000; 
-        }
+        .keyboard { display: flex; position: relative; height: 160px; background: #000; padding: 5px; border-radius: 4px; }
+        .key { width: 35px; height: 150px; border: 1px solid #777; background: var(--key-white); cursor: pointer; }
+        .key.black { background: var(--key-black); width: 24px; height: 90px; margin-left: -12px; margin-right: -12px; z-index: 2; }
         .key.active { background: var(--accent) !important; }
         
-        #status-bar { 
-            background: #111; 
-            padding: 5px; 
-            font-size: 0.7em; 
-            color: #555; 
-            text-align: left; 
-            padding-left: 20px;
+        #debug-log {
+            background: #000;
+            color: #0f0;
+            font-family: monospace;
+            font-size: 10px;
+            height: 80px;
+            overflow-y: auto;
+            text-align: left;
+            padding: 5px;
+            border-top: 1px solid #333;
+            user-select: text;
         }
     </style>
 </head>
 <body>
     <div class="main-container">
-        <header>
-            <h1>HYBRID POLY-SYNTH</h1>
-        </header>
+        <header><h1>MUSIC MAKER HYBRID</h1></header>
 
         <div class="controls-panel">
-            <div class="control-group">
-                <span class="control-label">Oscillator</span>
-                <select id="osc-type" onchange="updateParams()">
+            <div class="control-row">
+                <div class="label-group">
+                    <span class="control-label">Oscillator</span>
+                    <span class="hint">Type</span>
+                </div>
+                <select id="osc-type" onchange="updateParams('osc', this.value)">
                     <option value="0">Sine</option>
                     <option value="1" selected>Sawtooth</option>
                     <option value="2">Square</option>
                     <option value="3">Triangle</option>
                 </select>
             </div>
-            <div class="control-group">
-                <span class="control-label">Cutoff</span>
-                <input type="range" id="cutoff" min="20" max="15000" value="2000" oninput="updateParams()">
-                <span id="cutoff-val" style="font-size: 0.6em">2000 Hz</span>
+            
+            <div class="control-row">
+                <div class="label-group">
+                    <span class="control-label">Cutoff</span>
+                    <span class="hint">20 - 15000 Hz</span>
+                </div>
+                <div class="interaction-group">
+                    <button onclick="adjust('cutoff', -100)">-</button>
+                    <input type="range" id="cutoff-slider" min="20" max="15000" value="2000" oninput="sync('cutoff', this.value)">
+                    <button onclick="adjust('cutoff', 100)">+</button>
+                    <input type="number" id="cutoff-num" min="20" max="15000" value="2000" onchange="sync('cutoff', this.value)">
+                </div>
             </div>
-            <div class="control-group">
-                <span class="control-label">Resonance</span>
-                <input type="range" id="res" min="0.1" max="10" step="0.1" value="0.7" oninput="updateParams()">
-                <span id="res-val" style="font-size: 0.6em">0.7</span>
+            
+            <div class="control-row">
+                <div class="label-group">
+                    <span class="control-label">Resonance</span>
+                    <span class="hint">0.1 - 15.0</span>
+                </div>
+                <div class="interaction-group">
+                    <button onclick="adjust('res', -0.5)">-</button>
+                    <input type="range" id="res-slider" min="0.1" max="15.0" step="0.1" value="0.7" oninput="sync('res', this.value)">
+                    <button onclick="adjust('res', 0.5)">+</button>
+                    <input type="number" id="res-num" min="0.1" max="15.0" step="0.1" value="0.7" onchange="sync('res', this.value)">
+                </div>
             </div>
         </div>
         
-        <div class="keyboard-container">
-            <div class="keyboard" id="kb"></div>
-        </div>
-
-        <div id="status-bar">BRIDGE: <span id="bridge-status">OFFLINE</span> | LAST MIDI: <span id="midi-status">-</span></div>
+        <div class="keyboard-container"><div class="keyboard" id="kb"></div></div>
+        <div id="debug-log">Log initialized...</div>
     </div>
 
     <script>
         const kb = document.getElementById('kb');
-        const bridgeStatus = document.getElementById('bridge-status');
-        const midiStatus = document.getElementById('midi-status');
+        const debug = document.getElementById('debug-log');
         
+        function log(msg) {
+            const div = document.createElement('div');
+            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            debug.prepend(div);
+            if (debug.childNodes.length > 50) debug.removeChild(debug.lastChild);
+        }
+
+        // Setup Keyboard
         const startNote = 48; 
         const numNotes = 25; 
         const blackKeys = [1, 3, 6, 8, 10];
@@ -165,9 +195,7 @@
             keyMap[note] = k;
 
             const trigger = (v) => {
-                if (window.__JUCE__) {
-                    window.__JUCE__.backend.emitEvent('playNoteEvent', {note: note, velocity: v});
-                }
+                if (window.__JUCE__) window.__JUCE__.backend.emitEvent('playNoteEvent', {note: note, velocity: v});
             };
 
             k.onmousedown = (e) => { e.preventDefault(); trigger(0.8); k.classList.add('active'); };
@@ -176,36 +204,40 @@
             kb.appendChild(k);
         }
 
-        function updateParams() {
-            const osc = document.getElementById('osc-type').value;
-            const cutoff = document.getElementById('cutoff').value;
-            const res = document.getElementById('res').value;
-            
-            document.getElementById('cutoff-val').innerText = cutoff + " Hz";
-            document.getElementById('res-val').innerText = res;
+        // Parameter Logic
+        function sync(id, val) {
+            const slider = document.getElementById(id + '-slider');
+            const num = document.getElementById(id + '-num');
+            if (slider) slider.value = val;
+            if (num) num.value = val;
+            updateParams(id, val);
+        }
 
+        function adjust(id, delta) {
+            const num = document.getElementById(id + '-num');
+            let val = parseFloat(num.value) + delta;
+            val = Math.max(num.min, Math.min(num.max, val));
+            sync(id, val);
+        }
+
+        function updateParams(name, val) {
             if (window.__JUCE__ && window.__JUCE__.backend) {
-                window.__JUCE__.backend.setParam("osc", parseFloat(osc));
-                window.__JUCE__.backend.setParam("cutoff", parseFloat(cutoff));
-                window.__JUCE__.backend.setParam("res", parseFloat(res));
+                window.__JUCE__.backend.emitEvent("parameterEvent", {name: name, value: parseFloat(val)});
+                log(`Update: ${name} = ${val}`);
             }
         }
 
         window.onMidiIn = (msg) => {
-            const note = msg.note;
-            const vel = msg.velocity;
-            const key = keyMap[note];
-            if (key) {
-                if (vel > 0) key.classList.add('active');
-                else         key.classList.remove('active');
-            }
-            midiStatus.innerText = `Note ${note} (${vel > 0 ? 'ON' : 'OFF'})`;
+            const key = keyMap[msg.note];
+            if (key) msg.velocity > 0 ? key.classList.add('active') : key.classList.remove('active');
         };
 
         function checkBridge() {
             if (window.__JUCE__ && window.__JUCE__.backend) {
-                bridgeStatus.innerText = "ONLINE";
-                bridgeStatus.style.color = "var(--accent)";
+                log("BRIDGE ONLINE");
+                updateParams('osc', document.getElementById('osc-type').value);
+                updateParams('cutoff', document.getElementById('cutoff-num').value);
+                updateParams('res', document.getElementById('res-num').value);
             } else { setTimeout(checkBridge, 100); }
         }
         checkBridge();

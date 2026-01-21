@@ -12,7 +12,7 @@ public:
 
     void startNote (int midiNoteNumber, float velocity, juce::SynthesiserSound*, int) override
     {
-        level = velocity * 0.15f;
+        level = velocity * 0.25f;
         auto cyclesPerSample = juce::MidiMessage::getMidiNoteInHertz (midiNoteNumber) / getSampleRate();
         angleDelta = cyclesPerSample * 2.0 * juce::MathConstants<double>::pi;
         currentAngle = 0.0;
@@ -82,7 +82,7 @@ public:
     {
         oscType = type;
         filter.setCutoffFrequency (juce::jlimit (20.0f, 20000.0f, cutoff));
-        filter.setResonance (juce::jlimit (0.1f, 10.0f, resonance));
+        filter.setResonance (juce::jlimit (0.1f, 20.0f, resonance));
     }
 
 private:
