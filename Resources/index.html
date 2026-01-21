@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { background: #121212; color: #00ff99; font-family: sans-serif; text-align: center; padding-top: 50px; }
+        .btn { background: #00ff99; color: #121212; padding: 20px 40px; font-size: 24px; cursor: pointer; border: none; border-radius: 10px; font-weight: bold; }
+        #status { color: #888; margin-top: 20px; }
+        #log { font-family: monospace; font-size: 11px; color: #666; text-align: left; padding: 20px; max-height: 200px; overflow-y: auto; background: #000; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>MUSIC MAKER</h1>
+    <p id="status">Status: Searching...</p>
+    <button id="mainBtn" class="btn">START TEST SOUND</button>
+    <div id="log"></div>
+
+    <script>
+        var logEl = document.getElementById('log');
+        function log(m) { logEl.innerHTML += "> " + m + "<br>"; logEl.scrollTop = logEl.scrollHeight; }
+
+        function checkBridge() {
+            if (!window.__JUCE__ || !window.__JUCE__.backend) {
+                setTimeout(checkBridge, 100);
+                return;
+            }
+
+            log("Bridge found!");
+            var backend = window.__JUCE__.backend;
+            document.getElementById('status').innerText = "Status: BRIDGE DETECTED";
+
+            // Inspect everything (including non-enumerable)
+            var props = Object.getOwnPropertyNames(backend);
+            log("Backend Properties: " + props.join(", "));
+
+            document.getElementById('mainBtn').onclick = function() {
+                log("Button clicked!");
+
+                // 1. Try direct call (if it was hidden)
+                if (backend.testSound) {
+                    log("Calling backend.testSound()");
+                    backend.testSound();
+                } 
+                // 2. Try Event Fallback (The ultimate backup)
+                else if (backend.emitEvent) {
+                    log("Calling backend.emitEvent('toggleSoundEvent')");
+                    backend.emitEvent('toggleSoundEvent', {});
+                }
+                else {
+                    log("CRITICAL: No functions OR events found!");
+                }
+            };
+        }
+
+        checkBridge();
+    </script>
+</body>
+</html>

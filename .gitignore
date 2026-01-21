@@ -1,0 +1,30 @@
+# Build directories
+build/
+bin/
+out/
+x64/
+Debug/
+Release/
+
+# IDE files
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.user
+*.suo
+*.db
+*.opendb
+
+# JUCE/WebView2 artifacts
+WebViewData/
+JuceLibraryCode/
+
+# Temporary and log files
+*.log
+debug_log.txt
+gemini-conversation-*.json
+
+# OS files
+Thumbs.db
+Desktop.ini
