@@ -2,55 +2,117 @@
 <html>
 <head>
     <style>
-        body { background: #121212; color: #00ff99; font-family: sans-serif; text-align: center; padding-top: 50px; }
-        .btn { background: #00ff99; color: #121212; padding: 20px 40px; font-size: 24px; cursor: pointer; border: none; border-radius: 10px; font-weight: bold; }
-        #status { color: #888; margin-top: 20px; }
-        #log { font-family: monospace; font-size: 11px; color: #666; text-align: left; padding: 20px; max-height: 200px; overflow-y: auto; background: #000; margin-top: 20px; }
+        :root {
+            --bg-color: #2b2b2b;
+            --key-white: #efefef;
+            --key-black: #333;
+            --accent: #00ff99;
+            --text-color: #ddd;
+        }
+        body { 
+            background: var(--bg-color); 
+            color: var(--text-color); 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center; 
+            margin: 0; 
+            overflow: hidden;
+            user-select: none;
+        }
+        h1 { font-weight: 300; letter-spacing: 2px; margin-top: 20px; color: var(--accent); }
+        .keyboard-container {
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            margin-top: 30px;
+        }
+        .keyboard { 
+            display: flex; 
+            position: relative;
+            height: 250px;
+            background: #111;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .key { 
+            width: 50px; 
+            height: 230px; 
+            border: 1px solid #999; 
+            background: var(--key-white); 
+            cursor: pointer; 
+            border-radius: 0 0 5px 5px; 
+            position: relative;
+            transition: background 0.1s;
+        }
+        .key.black { 
+            background: var(--key-black); 
+            width: 34px; 
+            height: 140px; 
+            margin-left: -17px; 
+            margin-right: -17px; 
+            z-index: 2; 
+            border-color: #000; 
+        }
+        .key.active { background: var(--accent) !important; box-shadow: inset 0 0 10px rgba(0,0,0,0.3); }
+        #status { margin-top: 40px; font-size: 0.9em; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+        .controls { margin-top: 20px; }
     </style>
 </head>
 <body>
-    <h1>MUSIC MAKER</h1>
-    <p id="status">Status: Searching...</p>
-    <button id="mainBtn" class="btn">START TEST SOUND</button>
-    <div id="log"></div>
+    <h1>MUSIC MAKER HYBRID</h1>
+    
+    <div class="keyboard-container">
+        <div class="keyboard" id="kb"></div>
+    </div>
+
+    <div class="controls">
+        <p id="status">INITIALIZING BRIDGE...</p>
+    </div>
 
     <script>
-        var logEl = document.getElementById('log');
-        function log(m) { logEl.innerHTML += "> " + m + "<br>"; logEl.scrollTop = logEl.scrollHeight; }
+        const kb = document.getElementById('kb');
+        const status = document.getElementById('status');
+        
+        // C3 to C5
+        const startNote = 48; 
+        const numNotes = 25; 
+        const blackKeys = [1, 3, 6, 8, 10]; // Indices in an octave
 
-        function checkBridge() {
-            if (!window.__JUCE__ || !window.__JUCE__.backend) {
-                setTimeout(checkBridge, 100);
-                return;
-            }
-
-            log("Bridge found!");
-            var backend = window.__JUCE__.backend;
-            document.getElementById('status').innerText = "Status: BRIDGE DETECTED";
-
-            // Inspect everything (including non-enumerable)
-            var props = Object.getOwnPropertyNames(backend);
-            log("Backend Properties: " + props.join(", "));
-
-            document.getElementById('mainBtn').onclick = function() {
-                log("Button clicked!");
-
-                // 1. Try direct call (if it was hidden)
-                if (backend.testSound) {
-                    log("Calling backend.testSound()");
-                    backend.testSound();
-                } 
-                // 2. Try Event Fallback (The ultimate backup)
-                else if (backend.emitEvent) {
-                    log("Calling backend.emitEvent('toggleSoundEvent')");
-                    backend.emitEvent('toggleSoundEvent', {});
-                }
-                else {
-                    log("CRITICAL: No functions OR events found!");
+        for (let i = 0; i < numNotes; i++) {
+            const note = startNote + i;
+            const octaveIndex = i % 12;
+            const isBlack = blackKeys.includes(octaveIndex);
+            
+            const k = document.createElement('div');
+            k.className = 'key' + (isBlack ? ' black' : '');
+            k.dataset.note = note;
+            
+            const playNote = (v) => {
+                k.classList.toggle('active', v > 0);
+                if (window.__JUCE__ && window.__JUCE__.backend) {
+                    window.__JUCE__.backend.emitEvent('playNoteEvent', {note: note, velocity: v});
+                    status.innerText = v > 0 ? `NOTE ON: ${note}` : "READY";
                 }
             };
+
+            k.onmousedown = (e) => { e.preventDefault(); playNote(0.8); };
+            k.onmouseup = () => playNote(0);
+            k.onmouseleave = () => { if (k.classList.contains('active')) playNote(0); };
+            
+            // Touch support
+            k.ontouchstart = (e) => { e.preventDefault(); playNote(0.8); };
+            k.ontouchend = () => playNote(0);
+
+            kb.appendChild(k);
         }
 
+        function checkBridge() {
+            if (window.__JUCE__ && window.__JUCE__.backend) {
+                status.innerText = "BRIDGE ONLINE - SYNTH READY";
+            } else {
+                setTimeout(checkBridge, 100);
+            }
+        }
         checkBridge();
     </script>
 </body>
