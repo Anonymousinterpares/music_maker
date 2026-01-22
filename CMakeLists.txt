@@ -32,6 +32,7 @@ target_sources(MusicMaker
 target_compile_definitions(MusicMaker
     PRIVATE
         JUCE_USE_WIN_WEBVIEW2=1
+        JUCE_ASIO=1
 )
 
 target_link_libraries(MusicMaker

@@ -5,6 +5,9 @@ MainComponent::MainComponent()
 {
     RealTimeLogger::log ("Application Started");
     
+    // JUCE 7: initialiseWithDefaultDevices will try to find and open the best devices
+    deviceManager.initialiseWithDefaultDevices (0, 2);
+
     for (int i = 0; i < 8; ++i)
     {
         auto* voice = new SynthVoice();
@@ -27,27 +30,8 @@ MainComponent::MainComponent()
         .withEventListener ("playNoteEvent", [this] (juce::var params) {
             int note = params["note"];
             float vel = params["velocity"];
-            if (vel > 0) 
-            {
-                synth.noteOn (1, note, vel);
-                if (transport.getIsRecording())
-                    pendingNotes.push_back ({ note, transport.getCurrentBeat() });
-            }
-            else        
-            {
-                synth.noteOff (1, note, 0.0f, true);
-                if (transport.getIsRecording())
-                {
-                    auto it = std::find_if (pendingNotes.begin(), pendingNotes.end(), [&](const PendingNote& p) { return p.note == note; });
-                    if (it != pendingNotes.end())
-                    {
-                        double duration = transport.getCurrentBeat() - it->startBeat;
-                        if (duration < 0) duration += 16.0; // Handle loop wrap
-                        model.addNote ({ note, 0.8f, it->startBeat, duration });
-                        pendingNotes.erase (it);
-                    }
-                }
-            }
+            if (vel > 0) synth.noteOn (1, note, vel);
+            else        synth.noteOff (1, note, 0.0f, true);
         })
         .withEventListener ("parameterEvent", [this] (juce::var params) {
             juce::String name = params["name"];
@@ -61,17 +45,22 @@ MainComponent::MainComponent()
             juce::String cmd = params["command"];
             if (cmd == "play")       transport.setPlaying (true);
             else if (cmd == "stop")  transport.setPlaying (false);
-            else if (cmd == "record") transport.setRecording (params["value"]);
-            else if (cmd == "bpm")   transport.setBpm ((double)params["value"]);
-            else if (cmd == "metronome") metronomeEnabled = (bool)params["value"];
-            else if (cmd == "clear") { model.clear(); pendingNotes.clear(); }
+            else if (cmd == "bpm")   transport.setBpm ((double)params["data"]);
+            else if (cmd == "clear") { model.clear(); }
             else if (cmd == "save")  saveProject();
             else if (cmd == "export") {
-                juce::String json = getFullProjectJson();
-                webBrowser->evaluateJavascript("if(window.onExport) window.onExport(" + juce::JSON::toString(json) + ");");
+                webBrowser->evaluateJavascript("if(window.onExport) window.onExport(" + getFullProjectJson() + ");");
             }
-            else if (cmd == "import") {
-                loadFullProjectJson(params["data"]);
+            else if (cmd == "import") loadFullProjectJson(params["data"]);
+        })
+        .withEventListener ("audioDeviceEvent", [this] (juce::var params) {
+            juce::String cmd = params["command"];
+            RealTimeLogger::log("BRIDGE audioDeviceEvent: " + cmd);
+            if (cmd == "list") {
+                webBrowser->evaluateJavascript("if(window.onAudioDevices) window.onAudioDevices(" + getAudioDevicesJson() + ");");
+            }
+            else if (cmd == "set") {
+                setAudioDevice(params["type"], params["device"]);
             }
         })
         .withEventListener ("editEvent", [this] (juce::var params) {
@@ -110,93 +99,49 @@ void MainComponent::prepareToPlay (int, double sampleRate)
     currentSampleRate = sampleRate;
     synth.setCurrentPlaybackSampleRate (sampleRate);
     for (int i = 0; i < synth.getNumVoices(); ++i)
-    {
         if (auto* v = dynamic_cast<SynthVoice*> (synth.getVoice(i)))
             v->prepare (sampleRate);
-    }
     updateSynthParams();
 }
 
 void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& bufferToFill)
 {
     bufferToFill.clearActiveBufferRegion();
-    if (currentSampleRate > 0)
+    if (currentSampleRate > 0 && transport.getIsPlaying())
     {
         double beatBefore = transport.getCurrentBeat();
         transport.advance (bufferToFill.numSamples, currentSampleRate);
         double beatAfter = transport.getCurrentBeat();
 
-        if (transport.getIsPlaying())
+        for (const auto& note : model.getNotes())
         {
-            for (const auto& note : model.getNotes())
-            {
-                bool noteStarted = (note.startBeat >= beatBefore && note.startBeat < beatAfter);
-                if (beatAfter < beatBefore) noteStarted = (note.startBeat >= beatBefore || note.startBeat < beatAfter);
-                if (noteStarted) synth.noteOn (1, note.note, note.velocity);
+            bool noteStarted = (note.startBeat >= beatBefore && note.startBeat < beatAfter);
+            if (beatAfter < beatBefore) noteStarted = (note.startBeat >= beatBefore || note.startBeat < beatAfter);
+            if (noteStarted) synth.noteOn (1, note.note, note.velocity);
 
-                double endBeat = note.startBeat + note.durationBeats;
-                if (endBeat >= 16.0) endBeat -= 16.0;
-                bool noteEnded = (endBeat >= beatBefore && endBeat < beatAfter);
-                if (beatAfter < beatBefore) noteEnded = (endBeat >= beatBefore || endBeat < beatAfter);
-                if (noteEnded) synth.noteOff (1, note.note, 0.0f, true);
-            }
-
-            if (metronomeEnabled)
-            {
-                if (std::floor(beatAfter) > std::floor(beatBefore) || (beatAfter < beatBefore && beatAfter >= 0))
-                    playMetronomeClick(bufferToFill);
-            }
+            double endBeat = note.startBeat + note.durationBeats;
+            if (endBeat >= 16.0) endBeat -= 16.0;
+            bool noteEnded = (endBeat >= beatBefore && endBeat < beatAfter);
+            if (beatAfter < beatBefore) noteEnded = (endBeat >= beatBefore || endBeat < beatAfter);
+            if (noteEnded) synth.noteOff (1, note.note, 0.0f, true);
         }
     }
     juce::MidiBuffer incomingMidi; 
     synth.renderNextBlock (*bufferToFill.buffer, incomingMidi, bufferToFill.startSample, bufferToFill.numSamples);
 }
 
-void MainComponent::playMetronomeClick (const juce::AudioSourceChannelInfo& bufferToFill)
-{
-    float freq = 880.0f;
-    float phaseDelta = (freq * 2.0f * juce::MathConstants<float>::pi) / (float)currentSampleRate;
-    static float phase = 0;
-    for (int i = 0; i < juce::jmin(500, bufferToFill.numSamples); ++i)
-    {
-        float sample = std::sin(phase) * 0.2f;
-        for (int ch = 0; ch < bufferToFill.buffer->getNumChannels(); ++ch)
-            bufferToFill.buffer->addSample(ch, bufferToFill.startSample + i, sample);
-        phase += phaseDelta;
-    }
-    phase = 0; // Reset for next click
-}
-
 void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
 {
-    if (message.isNoteOn())
-    {
-        synth.noteOn (message.getChannel(), message.getNoteNumber(), message.getFloatVelocity());
-        if (transport.getIsRecording()) pendingNotes.push_back ({ message.getNoteNumber(), transport.getCurrentBeat() });
-    }
-    else if (message.isNoteOff())
-    {
-        synth.noteOff (message.getChannel(), message.getNoteNumber(), message.getFloatVelocity(), true);
-        if (transport.getIsRecording())
-        {
-            auto it = std::find_if (pendingNotes.begin(), pendingNotes.end(), [&](const PendingNote& p) { return p.note == message.getNoteNumber(); });
-            if (it != pendingNotes.end())
-            {
-                double duration = transport.getCurrentBeat() - it->startBeat;
-                if (duration < 0) duration += 16.0;
-                model.addNote ({ message.getNoteNumber(), message.getFloatVelocity(), it->startBeat, duration });
-                pendingNotes.erase (it);
-            }
-        }
-    }
+    if (message.isNoteOn()) synth.noteOn (message.getChannel(), message.getNoteNumber(), message.getFloatVelocity());
+    else if (message.isNoteOff()) synth.noteOff (message.getChannel(), message.getNoteNumber(), message.getFloatVelocity(), true);
+    
     juce::MessageManager::callAsync ([this, message]() {
         if (message.isNoteOn() || message.isNoteOff())
         {
             juce::DynamicObject::Ptr obj = new juce::DynamicObject();
             obj->setProperty ("note", message.getNoteNumber());
             obj->setProperty ("velocity", message.isNoteOn() ? message.getFloatVelocity() : 0.0f);
-            juce::String js = "if(window.onMidiIn) window.onMidiIn(" + juce::JSON::toString(juce::var(obj)) + ");";
-            webBrowser->evaluateJavascript (js);
+            webBrowser->evaluateJavascript ("if(window.onMidiIn) window.onMidiIn(" + juce::JSON::toString(juce::var(obj.get())) + ");");
         }
     });
 }
@@ -214,14 +159,9 @@ void MainComponent::saveProject()
         lastDirectory = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
 
     fileChooser = std::make_unique<juce::FileChooser> ("Save Project", lastDirectory, "*.json");
-
-    auto folderFlags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles;
-
-    fileChooser->launchAsync (folderFlags, [this] (const juce::FileChooser& fc)
-    {
+    fileChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles, [this] (const juce::FileChooser& fc) {
         auto file = fc.getResult();
-        if (file.getFullPathName().isNotEmpty())
-        {
+        if (file.getFullPathName().isNotEmpty()) {
             model.saveToFile (file);
             lastDirectory = file.getParentDirectory();
             RealTimeLogger::log ("Project saved to: " + file.getFullPathName());
@@ -233,39 +173,76 @@ juce::String MainComponent::getFullProjectJson()
 {
     juce::DynamicObject::Ptr obj = new juce::DynamicObject();
     obj->setProperty("bpm", transport.getBpm());
-    
     juce::DynamicObject::Ptr synthParams = new juce::DynamicObject();
-    synthParams->setProperty("osc", currentOscType);
-    synthParams->setProperty("cut", currentCutoff);
-    synthParams->setProperty("res", currentRes);
+    synthParams->setProperty("osc", currentOscType); synthParams->setProperty("cut", currentCutoff); synthParams->setProperty("res", currentRes);
     obj->setProperty("synth", juce::var(synthParams.get()));
-
     obj->setProperty("t1", model.toMinifiedVar());
-    
-    return juce::JSON::toString(juce::var(obj));
+    return juce::JSON::toString(juce::var(obj.get()));
 }
 
 void MainComponent::loadFullProjectJson(const juce::String& json)
 {
     auto var = juce::JSON::parse(json);
-    if (var.isObject())
-    {
+    if (var.isObject()) {
         if (var.hasProperty("bpm")) transport.setBpm(var["bpm"]);
-        
-        if (var.hasProperty("synth"))
-        {
+        if (var.hasProperty("synth")) {
             auto s = var["synth"];
             if (s.hasProperty("osc")) currentOscType = s["osc"];
             if (s.hasProperty("cut")) currentCutoff = s["cut"];
             if (s.hasProperty("res")) currentRes = s["res"];
             updateSynthParams();
         }
-        
-        if (var.hasProperty("t1"))
-        {
-            model.fromMinifiedVar(var["t1"]);
-        }
+        if (var.hasProperty("t1")) model.fromMinifiedVar(var["t1"]);
+        RealTimeLogger::log("Project Loaded via JSON");
     }
+}
+
+juce::String MainComponent::getAudioDevicesJson()
+{
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    juce::Array<juce::var> typesArray;
+    auto& types = deviceManager.getAvailableDeviceTypes();
+    for (auto* t : types) {
+        juce::DynamicObject::Ptr typeObj = new juce::DynamicObject();
+        typeObj->setProperty("name", t->getTypeName());
+        juce::Array<juce::var> devicesArray;
+        auto devices = t->getDeviceNames();
+        for (auto& d : devices) devicesArray.add(juce::var(d));
+        typeObj->setProperty("devices", devicesArray);
+        typesArray.add(juce::var(typeObj.get()));
+    }
+    root->setProperty("types", typesArray);
+    auto* currentDevice = deviceManager.getCurrentAudioDevice();
+    if (currentDevice != nullptr) {
+        root->setProperty("currentType", currentDevice->getTypeName());
+        root->setProperty("currentDevice", currentDevice->getName());
+    }
+    return juce::JSON::toString(juce::var(root.get()));
+}
+
+void MainComponent::setAudioDevice (const juce::String& type, const juce::String& deviceName)
+{
+    RealTimeLogger::log ("Request: Type=" + type + ", Device=" + deviceName);
+    
+    // 1. Switch Type if different
+    juce::String currentTypeName = "";
+    if (auto* currentDevice = deviceManager.getCurrentAudioDevice())
+        currentTypeName = currentDevice->getTypeName();
+
+    if (currentTypeName != type)
+    {
+        RealTimeLogger::log ("Switching Type: " + currentTypeName + " -> " + type);
+        deviceManager.setCurrentAudioDeviceType (type, true);
+    }
+
+    // 2. Apply Setup
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    deviceManager.getAudioDeviceSetup (setup);
+    setup.outputDeviceName = deviceName;
+    
+    auto err = deviceManager.setAudioDeviceSetup (setup, true); 
+    if (err.isNotEmpty()) RealTimeLogger::log ("Device Error: " + err); 
+    else                  RealTimeLogger::log ("Device Active: " + deviceName);
 }
 
 void MainComponent::timerCallback()
@@ -282,8 +259,14 @@ void MainComponent::timerCallback()
     }
     obj->setProperty("notes", notesArray);
 
-    juce::String js = "if(window.onUpdate) window.onUpdate(" + juce::JSON::toString(juce::var(obj)) + ");";
-    webBrowser->evaluateJavascript (js);
+    auto logs = RealTimeLogger::getPendingUiLogs();
+    if (logs.size() > 0) {
+        juce::Array<juce::var> logsVar;
+        for (auto& l : logs) logsVar.add (l);
+        obj->setProperty ("logs", logsVar);
+    }
+
+    webBrowser->evaluateJavascript ("if(window.onUpdate) window.onUpdate(" + juce::JSON::toString(juce::var(obj.get())) + ");");
 }
 
 void MainComponent::releaseResources() {}

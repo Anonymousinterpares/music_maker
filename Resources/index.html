@@ -3,39 +3,58 @@
 <head>
     <style>
         :root {
-            --bg-color: #121212; --panel-color: #1e1e1e; --accent: #00ff99; --text: #eee; --record: #ff4444; --ai: #bb86fc;
+            --bg-color: #121212; --panel-color: #1e1e1e; --accent: #00ff99; --text: #eee; --record: #ff4444; --ai: #bb86fc; --settings: #03dac6; --logs: #ffb74d;
         }
         body { background: var(--bg-color); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; overflow: hidden; user-select: none; }
         
-        header { display: flex; align-items: center; justify-content: space-between; padding: 5px 15px; background: #000; border-bottom: 1px solid #333; height: 40px; }
+        header { display: flex; align-items: center; justify-content: space-between; padding: 5px 15px; background: #000; border-bottom: 1px solid #333; height: 40px; z-index: 200; position: relative; }
         .transport-controls { display: flex; gap: 8px; align-items: center; }
         .btn { background: #333; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 0.7em; font-weight: bold; }
         .btn.active { background: var(--accent); color: black; }
         .btn.recording { background: var(--record); color: white; animation: blink 1s infinite; }
         .btn.ai-btn { background: var(--ai); color: black; }
+        .btn.settings-btn { background: var(--settings); color: black; }
+        .btn.log-btn { background: var(--logs); color: black; }
         
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } } 
         
-        .main-layout { display: flex; flex-direction: column; height: 100vh; }
+        .main-layout { display: flex; flex-direction: column; height: 100vh; position: relative; }
         
         .piano-roll-container { flex-grow: 1; position: relative; background: #111; overflow: hidden; cursor: crosshair; }
         canvas { width: 100%; height: 100%; }
 
-        .bottom-panel { background: var(--panel-color); padding: 10px; display: flex; gap: 20px; align-items: center; border-top: 1px solid #333; }
+        /* Persistent Log Overlay */
+        #log-overlay { 
+            position: absolute; bottom: 120px; left: 10px; right: 10px; height: 120px; 
+            background: rgba(0,0,0,0.9); border: 1px solid var(--logs); border-radius: 4px;
+            display: none; flex-direction: column; z-index: 50;
+        }
+        #log-container { 
+            flex-grow: 1; padding: 8px; font-family: 'Consolas', monospace; font-size: 10px; 
+            color: var(--logs); overflow-y: auto; pointer-events: auto;
+        }
+
+        .bottom-panel { background: var(--panel-color); padding: 10px; display: flex; gap: 20px; align-items: center; border-top: 1px solid #333; height: 100px; z-index: 150; }
         .knob-group { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 0.6em; color: #888; }
         
-        .keyboard-area { height: 100px; display: flex; justify-content: center; background: #000; position: relative; }
-        .keyboard { display: flex; position: relative; height: 90px; }
-        .key { width: 24px; height: 80px; border: 1px solid #444; background: #ddd; position: relative; transition: background 0.1s; }
-        .key.black { background: #222; width: 16px; height: 50px; margin-left: -8px; margin-right: -8px; z-index: 2; border-color: #000; }
+        .keyboard-area { height: 100%; display: flex; justify-content: center; background: #000; position: relative; flex-grow: 1; }
+        .keyboard { display: flex; position: relative; height: 80px; }
+        .key { width: 24px; height: 75px; border: 1px solid #444; background: #ddd; position: relative; transition: background 0.1s; }
+        .key.black { background: #222; width: 16px; height: 45px; margin-left: -8px; margin-right: -8px; z-index: 2; border-color: #000; }
         .key.active { background: var(--accent) !important; }
         .key::after { content: attr(data-key); position: absolute; bottom: 2px; width: 100%; text-align: center; font-size: 8px; color: #666; pointer-events: none; }
         .key.waiting { background: #ffaa00 !important; }
 
-        /* AI Modal */
-        #ai-modal { position: absolute; top: 50px; left: 50px; right: 50px; bottom: 150px; background: #222; border: 2px solid var(--ai); z-index: 100; display: none; flex-direction: column; padding: 20px; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
-        #ai-text { flex-grow: 1; background: #111; color: var(--ai); border: 1px solid #444; font-family: monospace; font-size: 12px; padding: 10px; margin-bottom: 10px; resize: none; outline: none; }
+        .modal { position: absolute; top: 50px; left: 50px; right: 50px; bottom: 150px; background: #222; z-index: 100; display: none; flex-direction: column; padding: 20px; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+
+        #settings-modal { border: 2px solid var(--settings); }
+        .settings-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .settings-label { width: 120px; font-size: 12px; color: #aaa; }
+        select { background: #333; color: white; border: 1px solid #444; padding: 5px; font-size: 12px; min-width: 200px; }
+
+        #ai-modal { border: 2px solid var(--ai); }
+        #ai-text { flex-grow: 1; background: #111; color: var(--ai); border: 1px solid #444; font-family: monospace; font-size: 12px; padding: 10px; margin-bottom: 10px; resize: none; outline: none; }
 
         #assign-hint { position: absolute; top: -20px; font-size: 10px; color: #ffaa00; display: none; }
         #status { font-size: 10px; color: #555; position: absolute; bottom: 5px; right: 10px; }
@@ -44,15 +63,16 @@
 <body>
     <div class="main-layout">
         <header>
-            <div style="color: var(--accent); font-weight: bold; font-size: 0.8em;">MUSIC MAKER v0.3</div>
+            <div style="color: var(--accent); font-weight: bold; font-size: 0.8em;">MUSIC MAKER v1.0b</div>
             <div class="transport-controls">
                 <button id="play-btn" class="btn" onclick="cmd('play')">PLAY</button>
                 <button id="stop-btn" class="btn" onclick="cmd('stop')">STOP</button>
                 <button id="rec-btn" class="btn" onclick="toggleRec()">REC</button>
-                <button id="metro-btn" class="btn" onclick="toggleMetro()">METRO</button>
                 <input type="number" id="bpm" value="120" class="btn" style="width: 40px;" onchange="cmd('bpm', this.value)">
                 <button class="btn" onclick="cmd('clear')">CLEAR</button>
                 <button class="btn" onclick="cmd('save')" style="background: #444;">SAVE AS...</button>
+                <button class="btn settings-btn" onclick="toggleSettings()">SETTINGS</button>
+                <button id="log-btn" class="btn log-btn" onclick="toggleLogs()">LOGS: OFF</button>
                 <button class="btn ai-btn" onclick="toggleAI()">AI BRIDGE</button>
                 <button id="assign-btn" class="btn" onclick="toggleAssignMode()" style="background: #555;">ASSIGN KEYS</button>
             </div>
@@ -62,37 +82,39 @@
         <div class="piano-roll-container" id="pr-container">
             <canvas id="pr-canvas"></canvas>
             
-            <div id="ai-modal">
+            <div id="log-overlay">
+                <div id="log-container"></div>
+            </div>
+
+            <div id="settings-modal" class="modal">
                 <div class="modal-header">
-                    <span style="color: var(--ai); font-weight: bold;">AI PROJECT BRIDGE (JSON)</span>
+                    <span style="color: var(--settings); font-weight: bold;">AUDIO SETTINGS</span>
+                    <button class="btn" onclick="toggleSettings()" style="background: #444;">CLOSE</button>
+                </div>
+                <div class="settings-row"><div class="settings-label">DRIVER TYPE</div><select id="device-type" onchange="refreshDeviceList()"></select></div>
+                <div class="settings-row"><div class="settings-label">DEVICE</div><select id="device-name" onchange="applyDevice()"></select></div>
+                <div style="font-size: 10px; color: #666; margin-top: 20px;">ASIO is recommended for low latency. Check logs for status.</div>
+            </div>
+
+            <div id="ai-modal" class="modal">
+                <div class="modal-header">
+                    <span style="color: var(--ai); font-weight: bold;">AI BRIDGE</span>
                     <div>
-                        <button class="btn" onclick="copyInstructions()" style="background: #444;">COPY LLM INSTRUCTIONS</button>
-                        <button class="btn" onclick="exportJson()">REFRESH EXPORT</button>
-                        <button class="btn" onclick="importJson()" style="background: var(--ai); color: black;">IMPORT / APPLY</button>
+                        <button class="btn" onclick="copyInstructions()" style="background: #444;">COPY LLM PROMPT</button>
+                        <button class="btn" onclick="exportJson()">REFRESH</button>
+                        <button class="btn" onclick="importJson()" style="background: var(--ai); color: black;">IMPORT</button>
                         <button class="btn" onclick="toggleAI()" style="background: #444;">CLOSE</button>
                     </div>
                 </div>
-                <textarea id="ai-text" placeholder="Paste Project JSON here or refresh export..."></textarea>
-                <div style="font-size: 10px; color: #777;">Copy this JSON to an LLM to modify your song, then paste it back and click IMPORT.</div>
+                <textarea id="ai-text" style="flex-grow: 1; background: #111; color: var(--ai); border: 1px solid #444; font-family: monospace; font-size: 12px; padding: 10px; margin-bottom: 10px; resize: none; outline: none;"></textarea>
             </div>
         </div>
 
         <div class="bottom-panel">
-            <div class="knob-group">
-                <span>OSC</span>
-                <select id="osc" onchange="updateParams()" style="background:#000; color:var(--accent); border:1px solid #444; font-size: 10px;">
-                    <option value="0">Sine</option><option value="1" selected>Saw</option><option value="2">Square</option><option value="3">Tri</option>
-                </select>
-            </div>
-            <div class="knob-group">
-                <span>CUTOFF</span>
-                <input type="range" id="cutoff" min="20" max="15000" value="2000" oninput="updateParams()">
-            </div>
+            <div class="knob-group"><span>OSC</span><select id="osc" onchange="updateParams()" style="background:#000; color:var(--accent); border:1px solid #444; font-size: 10px;"><option value="0">Sine</option><option value="1" selected>Saw</option><option value="2">Square</option><option value="3">Tri</option></select></div>
+            <div class="knob-group"><span>CUTOFF</span><input type="range" id="cutoff" min="20" max="15000" value="2000" oninput="updateParams()"></div>
             <div class="knob-group"><span>RES</span><input type="range" id="res" min="0.1" max="15" step="0.1" value="0.7" oninput="updateParams()"></div>
-            <div class="keyboard-area">
-                <div id="assign-hint">CLICK A PIANO KEY THEN PRESS A COMPUTER KEY</div>
-                <div class="keyboard" id="kb"></div>
-            </div>
+            <div class="keyboard-area"><div id="assign-hint">CLICK PIANO KEY THEN PC KEY</div><div class="keyboard" id="kb"></div></div>
         </div>
         <div id="status">BRIDGE: OFFLINE</div>
     </div>
@@ -102,24 +124,23 @@
         const ctx = canvas.getContext('2d');
         const kb = document.getElementById('kb');
         const clock = document.getElementById('clock');
-        const assignHint = document.getElementById('assign-hint');
         const aiModal = document.getElementById('ai-modal');
-        const aiText = document.getElementById('ai-text');
+        const settingsModal = document.getElementById('settings-modal');
+        const logOverlay = document.getElementById('log-overlay');
+        const logContainer = document.getElementById('log-container');
+        const assignHint = document.getElementById('assign-hint');
         
         let state = { beat: 0, playing: false, recording: false, metronome: false, notes: [] };
-        let assignMode = false;
-        let waitingForKey = null;
-        
+        let audioData = { types: [], currentType: "", currentDevice: "" };
+        let assignMode = false; let waitingForKey = null;
+        let logsActive = false;
+
         const startNote = 48; const numNotes = 25; const blackKeys = [1, 3, 6, 8, 10];
-        const keyMap = {}; 
-        let pcKeys = { 'a':48, 'w':49, 's':50, 'e':51, 'd':52, 'f':53, 't':54, 'g':55, 'y':56, 'h':57, 'u':58, 'j':59, 'k':60 };
+        const keyMap = {}; let pcKeys = { 'a':48, 'w':49, 's':50, 'e':51, 'd':52, 'f':53, 't':54, 'g':55, 'y':56, 'h':57, 'u':58, 'j':59, 'k':60 };
 
         function updateKeyLabels() {
             document.querySelectorAll('.key').forEach(k => k.dataset.key = "");
-            for(let k in pcKeys) {
-                const el = keyMap[pcKeys[k]];
-                if(el) el.dataset.key = k.toUpperCase();
-            }
+            for(let k in pcKeys) { const el = keyMap[pcKeys[k]]; if(el) el.dataset.key = k.toUpperCase(); }
         }
 
         for (let i = 0; i < numNotes; i++) {
@@ -127,33 +148,65 @@
             const k = document.createElement('div');
             k.className = 'key' + (blackKeys.includes(i % 12) ? ' black' : '');
             k.dataset.note = n;
-            k.onmousedown = (e) => { 
-                e.preventDefault();
-                if(assignMode) {
-                    if(waitingForKey) waitingForKey.classList.remove('waiting');
-                    waitingForKey = k; k.classList.add('waiting');
-                } else { trigger(n, 0.8); }
-            };
+            k.onmousedown = (e) => { e.preventDefault(); if(assignMode) { if(waitingForKey) waitingForKey.classList.remove('waiting'); waitingForKey = k; k.classList.add('waiting'); } else { trigger(n, 0.8); } };
             k.onmouseup = () => { if(!assignMode) trigger(n, 0); };
             k.onmouseleave = () => { if(!assignMode && k.classList.contains('active')) trigger(n, 0); };
             keyMap[n] = k; kb.appendChild(k);
         }
         updateKeyLabels();
 
+        function cmd(c, d) { if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: c, data: d}); }
         function toggleAI() { aiModal.style.display = aiModal.style.display === 'flex' ? 'none' : 'flex'; if(aiModal.style.display === 'flex') exportJson(); }
         function exportJson() { cmd('export'); }
-        function importJson() { cmd('import', aiText.value); }
-        window.onExport = (json) => { aiText.value = json; };
+        function importJson() { cmd('import', document.getElementById('ai-text').value); }
+        window.onExport = (json) => { document.getElementById('ai-text').value = json; };
 
-        function copyInstructions() {
-            const prompt = `You are an expert music composer. Modify this 16-beat loop JSON. 
-Format: [pitch, velocity, start_beat, duration]. 
-1. bpm: 20-300.
-2. synth: {osc: 0-3, cut: 20-15000, res: 0.1-15}.
-3. t1: Array of notes.
-Return ONLY raw JSON.`;
-            navigator.clipboard.writeText(prompt + "\n\n" + aiText.value);
-            alert("Instructions + Project JSON copied to clipboard!");
+        function toggleSettings() { settingsModal.style.display = settingsModal.style.display === 'flex' ? 'none' : 'flex'; if(settingsModal.style.display === 'flex') window.__JUCE__.backend.emitEvent('audioDeviceEvent', {command: 'list'}); }
+        
+        window.onAudioDevices = (json) => {
+            console.log("Devices received:", json);
+            audioData = json;
+            const typeSel = document.getElementById('device-type'); typeSel.innerHTML = "";
+            audioData.types.forEach(t => {
+                const opt = document.createElement('option'); opt.value = t.name; opt.innerText = t.name;
+                if(t.name === audioData.currentType) opt.selected = true;
+                typeSel.appendChild(opt);
+            });
+            refreshDeviceList(true); // Don't auto-apply on first load
+        };
+
+        function refreshDeviceList(initial = false) {
+            const type = document.getElementById('device-type').value;
+            const devSel = document.getElementById('device-name'); devSel.innerHTML = "";
+            const typeObj = audioData.types.find(t => t.name === type);
+            if(typeObj) {
+                typeObj.devices.forEach(d => {
+                    const opt = document.createElement('option'); opt.value = d; opt.innerText = d;
+                    if(d === audioData.currentDevice) opt.selected = true;
+                    devSel.appendChild(opt);
+                });
+            }
+            // Auto-apply when type changes, unless it's the initial populate
+            if(!initial) applyDevice();
+        }
+
+        function applyDevice() {
+            const type = document.getElementById('device-type').value;
+            const device = document.getElementById('device-name').value;
+            console.log("Applying device:", type, device);
+            if (window.__JUCE__) window.__JUCE__.backend.emitEvent('audioDeviceEvent', {command: 'set', type: type, device: device});
+        }
+
+        function toggleLogs() {
+            logsActive = !logsActive;
+            logOverlay.style.display = logsActive ? 'flex' : 'none';
+            const btn = document.getElementById('log-btn');
+            btn.innerText = `LOGS: ${logsActive ? 'ON' : 'OFF'}`;
+            btn.classList.toggle('active', logsActive);
+        }
+        function addLogs(logs) {
+            logs.forEach(l => { const d = document.createElement('div'); d.innerText = l; logContainer.appendChild(d); });
+            logContainer.scrollTop = logContainer.scrollHeight;
         }
 
         function toggleAssignMode() {
@@ -163,14 +216,14 @@ Return ONLY raw JSON.`;
             if(!assignMode && waitingForKey) { waitingForKey.classList.remove('waiting'); waitingForKey = null; }
         }
 
-        function trigger(n, v) {
-            if (window.__JUCE__) window.__JUCE__.backend.emitEvent('playNoteEvent', {note: n, velocity: v});
-            if (v > 0) keyMap[n]?.classList.add('active'); else keyMap[n]?.classList.remove('active');
+        function copyInstructions() {
+            const prompt = `You are an expert music composer. Modify this 16-beat loop JSON. Return ONLY raw JSON.`;
+            navigator.clipboard.writeText(prompt + "\n\n" + document.getElementById('ai-text').value);
+            alert("Copied!");
         }
 
-        function cmd(c, v) { if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: c, data: v}); }
-        function toggleRec() { state.recording = !state.recording; cmd('record', state.recording); }
-        function toggleMetro() { state.metronome = !state.metronome; cmd('metronome', state.metronome); }
+        function trigger(n, v) { if (window.__JUCE__) window.__JUCE__.backend.emitEvent('playNoteEvent', {note: n, velocity: v}); if (v > 0) keyMap[n]?.classList.add('active'); else keyMap[n]?.classList.remove('active'); }
+        function toggleRec() { state.recording = !state.recording; if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: 'record', value: state.recording}); }
         function updateParams() {
             if (window.__JUCE__) {
                 window.__JUCE__.backend.emitEvent("parameterEvent", {name: "osc", value: parseFloat(document.getElementById('osc').value)});
@@ -180,8 +233,8 @@ Return ONLY raw JSON.`;
         }
 
         window.onkeydown = (e) => { 
-            if(aiModal.style.display === 'flex') return;
-            if(assignMode && waitingForKey) {
+            if(aiModal.style.display === 'flex' || settingsModal.style.display === 'flex') return;
+            if(assignMode && waitingForKey) { 
                 const note = parseInt(waitingForKey.dataset.note);
                 for(let k in pcKeys) if(pcKeys[k] === note) delete pcKeys[k];
                 pcKeys[e.key.toLowerCase()] = note;
@@ -189,15 +242,13 @@ Return ONLY raw JSON.`;
                 updateKeyLabels(); return;
             }
             if(!e.repeat && pcKeys[e.key.toLowerCase()]) trigger(pcKeys[e.key.toLowerCase()], 0.8); 
-        };
+        }; 
         window.onkeyup = (e) => { if(pcKeys[e.key.toLowerCase()]) trigger(pcKeys[e.key.toLowerCase()], 0); };
 
         canvas.onclick = (e) => {
-            if(aiModal.style.display === 'flex') return;
-            const rect = canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left; const y = e.clientY - rect.top;
-            const beat = (x / canvas.width) * 16;
-            const note = Math.floor(startNote + (1 - y / canvas.height) * numNotes);
+            if(aiModal.style.display === 'flex' || settingsModal.style.display === 'flex') return;
+            const rect = canvas.getBoundingClientRect(); const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+            const beat = (x / canvas.width) * 16; const note = Math.floor(startNote + (1 - y / canvas.height) * numNotes);
             const existing = state.notes.find(n => n.n === note && Math.abs(n.s - beat) < 0.5);
             if (existing) window.__JUCE__.backend.emitEvent('editEvent', {type: 'remove', note: note, beat: existing.s});
             else window.__JUCE__.backend.emitEvent('editEvent', {type: 'add', note: note, beat: Math.floor(beat)});
@@ -208,8 +259,7 @@ Return ONLY raw JSON.`;
             const b = Math.floor(state.beat);
             clock.innerText = `${Math.floor(b/4)+1}.${(b%4)+1}.${Math.floor((state.beat%1)*100).toString().padStart(2,'0')}`;
             document.getElementById('play-btn').classList.toggle('active', state.playing);
-            document.getElementById('rec-btn').classList.toggle('recording', state.recording);
-            document.getElementById('metro-btn').classList.toggle('active', state.metronome);
+            if(msg.logs) addLogs(msg.logs);
             draw();
         };
 
@@ -229,18 +279,11 @@ Return ONLY raw JSON.`;
                 ctx.fillRect(x + 1, y + 1, w - 2, (canvas.height / numNotes) - 2);
             });
             ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 2;
-            let px = (state.beat / 16) * canvas.width;
-            ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvas.height); ctx.stroke();
+            let px = (state.beat / 16) * canvas.width; ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvas.height); ctx.stroke();
         }
 
-        function checkBridge() {
-            if (window.__JUCE__ && window.__JUCE__.backend) {
-                document.getElementById('status').innerText = "BRIDGE: ONLINE";
-                updateParams();
-            } else { setTimeout(checkBridge, 100); }
-        }
-        checkBridge();
-        window.onresize = draw;
+        function checkBridge() { if (window.__JUCE__ && window.__JUCE__.backend) { document.getElementById('status').innerText = "BRIDGE: ONLINE"; updateParams(); } else { setTimeout(checkBridge, 100); } }
+        checkBridge(); window.onresize = draw;
     </script>
 </body>
 </html>

@@ -2,6 +2,8 @@
 
 #include <JuceHeader.h>
 #include <fstream>
+#include <vector>
+#include <mutex>
 
 class RealTimeLogger : private juce::Thread
 {
@@ -12,10 +14,7 @@ public:
         if (!logFile.exists()) logFile.create();
         
         fileStream.open (logFile.getFullPathName().toRawUTF8(), std::ios::out | std::ios::app);
-        
-        // Pre-allocate FIFO for 1000 messages
         fifo.setTotalSize (1000);
-        
         startThread();
     }
 
@@ -31,11 +30,24 @@ public:
             instance->pushMessage (message);
     }
 
+    // Get logs for UI (called from Message Thread)
+    static juce::StringArray getPendingUiLogs()
+    {
+        if (auto* instance = getInstance())
+        {
+            std::lock_guard<std::mutex> lock (instance->uiLogMutex);
+            auto logs = instance->uiLogs;
+            instance->uiLogs.clear();
+            return logs;
+        }
+        return {};
+    }
+
 private:
     void pushMessage (const juce::String& message)
     {
-        // This is safe to call from the audio thread
-        auto msgWithTimestamp = juce::Time::getCurrentTime().toString (true, true) + ": " + message;
+        auto timestamp = juce::Time::getCurrentTime().toString (true, true);
+        auto msgWithTimestamp = timestamp + ": " + message;
         
         int start1, size1, start2, size2;
         fifo.prepareToWrite (1, start1, size1, start2, size2);
@@ -44,6 +56,13 @@ private:
         {
             messages[start1] = msgWithTimestamp;
             fifo.finishedWrite (1);
+        }
+
+        // Also push to UI queue (thread safe)
+        {
+            std::lock_guard<std::mutex> lock (uiLogMutex);
+            uiLogs.add (msgWithTimestamp);
+            if (uiLogs.size() > 100) uiLogs.remove (0);
         }
     }
 
@@ -57,17 +76,11 @@ private:
             if (numReady > 0)
             {
                 fifo.prepareToRead (numReady, start1, size1, start2, size2);
-                
-                for (int i = 0; i < size1; ++i)
-                    fileStream << messages[start1 + i] << "\n";
-                
-                for (int i = 0; i < size2; ++i)
-                    fileStream << messages[start2 + i] << "\n";
-                
+                for (int i = 0; i < size1; ++i) fileStream << messages[start1 + i] << "\n";
+                for (int i = 0; i < size2; ++i) fileStream << messages[start2 + i] << "\n";
                 fileStream.flush();
                 fifo.finishedRead (size1 + size2);
             }
-            
             wait (100);
         }
     }
@@ -81,6 +94,9 @@ private:
     juce::AbstractFifo fifo { 1000 };
     juce::String messages[1000];
     std::ofstream fileStream;
+
+    std::mutex uiLogMutex;
+    juce::StringArray uiLogs;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RealTimeLogger)
 };

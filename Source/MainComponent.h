@@ -152,6 +152,10 @@ private:
     
     juce::String getFullProjectJson();
     void loadFullProjectJson (const juce::String& json);
+    
+    // Audio Device Management
+    juce::String getAudioDevicesJson();
+    void setAudioDevice (const juce::String& type, const juce::String& deviceName);
 
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::File lastDirectory;
