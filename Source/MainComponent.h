@@ -149,6 +149,9 @@ private:
     void updateSynthParams();
     void playMetronomeClick (const juce::AudioSourceChannelInfo& bufferToFill);
     void saveProject();
+    
+    juce::String getFullProjectJson();
+    void loadFullProjectJson (const juce::String& json);
 
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::File lastDirectory;

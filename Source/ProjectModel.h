@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include <vector>
+#include <algorithm>
 
 struct NoteEvent
 {
@@ -24,6 +25,11 @@ public:
 
     void addNote (NoteEvent note)
     {
+        // AI Safety Invariant: Clamp values
+        note.note = juce::jlimit(0, 127, note.note);
+        note.velocity = juce::jlimit(0.0f, 1.0f, note.velocity);
+        note.durationBeats = std::max(0.01, note.durationBeats);
+
         notes.push_back (note);
         std::sort (notes.begin(), notes.end());
     }
@@ -39,28 +45,47 @@ public:
 
     const std::vector<NoteEvent>& getNotes() const { return notes; }
 
-    juce::String toJson() const
+    // Minified Protocol for AI (GEMINI.md Rule 4)
+    // t1: [[pitch, vel, start, dur], ...]
+    juce::var toMinifiedVar() const
     {
-        juce::DynamicObject::Ptr root = new juce::DynamicObject();
         juce::Array<juce::var> notesArray;
-
         for (const auto& n : notes)
         {
-            juce::DynamicObject::Ptr noteObj = new juce::DynamicObject();
-            noteObj->setProperty ("p", n.note);
-            noteObj->setProperty ("v", n.velocity);
-            noteObj->setProperty ("s", n.startBeat);
-            noteObj->setProperty ("d", n.durationBeats);
-            notesArray.add (juce::var (noteObj));
+            juce::Array<juce::var> noteData;
+            noteData.add(n.note);
+            noteData.add(std::round(n.velocity * 100) / 100.0);
+            noteData.add(std::round(n.startBeat * 100) / 100.0);
+            noteData.add(std::round(n.durationBeats * 100) / 100.0);
+            notesArray.add(noteData);
         }
+        return notesArray;
+    }
 
-        root->setProperty ("notes", notesArray);
-        return juce::JSON::toString (juce::var (root));
+    void fromMinifiedVar(const juce::var& v)
+    {
+        clear();
+        if (auto* arr = v.getArray())
+        {
+            for (auto& noteVar : *arr)
+            {
+                if (auto* n = noteVar.getArray())
+                {
+                    if (n->size() >= 4)
+                    {
+                        addNote({ (int)(*n)[0], (float)(*n)[1], (double)(*n)[2], (double)(*n)[3] });
+                    }
+                }
+            }
+        }
     }
 
     void saveToFile (const juce::File& file)
     {
-        file.replaceWithText (toJson());
+        juce::DynamicObject::Ptr root = new juce::DynamicObject();
+        root->setProperty("bpm", 120.0); // Simple default or pass as param
+        root->setProperty("t1", toMinifiedVar());
+        file.replaceWithText (juce::JSON::toString(juce::var(root)));
     }
 
 private:
@@ -72,7 +97,7 @@ class Transport
 public:
     Transport() : bpm (120.0), isPlaying (false), isRecording (false), currentBeat (0.0) {}
 
-    void setBpm (double newBpm) { bpm = newBpm; }
+    void setBpm (double newBpm) { bpm = juce::jlimit(20.0, 300.0, newBpm); }
     double getBpm() const { return bpm; }
 
     void setPlaying (bool shouldPlay) 

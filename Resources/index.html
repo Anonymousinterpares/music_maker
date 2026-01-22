@@ -3,7 +3,7 @@
 <head>
     <style>
         :root {
-            --bg-color: #121212; --panel-color: #1e1e1e; --accent: #00ff99; --text: #eee; --record: #ff4444;
+            --bg-color: #121212; --panel-color: #1e1e1e; --accent: #00ff99; --text: #eee; --record: #ff4444; --ai: #bb86fc;
         }
         body { background: var(--bg-color); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; overflow: hidden; user-select: none; }
         
@@ -12,6 +12,8 @@
         .btn { background: #333; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 0.7em; font-weight: bold; }
         .btn.active { background: var(--accent); color: black; }
         .btn.recording { background: var(--record); color: white; animation: blink 1s infinite; }
+        .btn.ai-btn { background: var(--ai); color: black; }
+        
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
         
         .main-layout { display: flex; flex-direction: column; height: 100vh; }
@@ -30,6 +32,11 @@
         .key::after { content: attr(data-key); position: absolute; bottom: 2px; width: 100%; text-align: center; font-size: 8px; color: #666; pointer-events: none; }
         .key.waiting { background: #ffaa00 !important; }
 
+        /* AI Modal */
+        #ai-modal { position: absolute; top: 50px; left: 50px; right: 50px; bottom: 150px; background: #222; border: 2px solid var(--ai); z-index: 100; display: none; flex-direction: column; padding: 20px; border-radius: 8px; box-shadow: 0 0 20px rgba(0,0,0,0.8); }
+        #ai-text { flex-grow: 1; background: #111; color: var(--ai); border: 1px solid #444; font-family: monospace; font-size: 12px; padding: 10px; margin-bottom: 10px; resize: none; outline: none; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+
         #assign-hint { position: absolute; top: -20px; font-size: 10px; color: #ffaa00; display: none; }
         #status { font-size: 10px; color: #555; position: absolute; bottom: 5px; right: 10px; }
     </style>
@@ -37,7 +44,7 @@
 <body>
     <div class="main-layout">
         <header>
-            <div style="color: var(--accent); font-weight: bold; font-size: 0.8em;">MUSIC MAKER v0.2</div>
+            <div style="color: var(--accent); font-weight: bold; font-size: 0.8em;">MUSIC MAKER v0.3</div>
             <div class="transport-controls">
                 <button id="play-btn" class="btn" onclick="cmd('play')">PLAY</button>
                 <button id="stop-btn" class="btn" onclick="cmd('stop')">STOP</button>
@@ -46,6 +53,7 @@
                 <input type="number" id="bpm" value="120" class="btn" style="width: 40px;" onchange="cmd('bpm', this.value)">
                 <button class="btn" onclick="cmd('clear')">CLEAR</button>
                 <button class="btn" onclick="cmd('save')" style="background: #444;">SAVE AS...</button>
+                <button class="btn ai-btn" onclick="toggleAI()">AI BRIDGE</button>
                 <button id="assign-btn" class="btn" onclick="toggleAssignMode()" style="background: #555;">ASSIGN KEYS</button>
             </div>
             <div id="clock" style="font-family: monospace; font-size: 0.8em; color: var(--accent);">1.1.00</div>
@@ -53,6 +61,20 @@
 
         <div class="piano-roll-container" id="pr-container">
             <canvas id="pr-canvas"></canvas>
+            
+            <div id="ai-modal">
+                <div class="modal-header">
+                    <span style="color: var(--ai); font-weight: bold;">AI PROJECT BRIDGE (JSON)</span>
+                    <div>
+                        <button class="btn" onclick="copyInstructions()" style="background: #444;">COPY LLM INSTRUCTIONS</button>
+                        <button class="btn" onclick="exportJson()">REFRESH EXPORT</button>
+                        <button class="btn" onclick="importJson()" style="background: var(--ai); color: black;">IMPORT / APPLY</button>
+                        <button class="btn" onclick="toggleAI()" style="background: #444;">CLOSE</button>
+                    </div>
+                </div>
+                <textarea id="ai-text" placeholder="Paste Project JSON here or refresh export..."></textarea>
+                <div style="font-size: 10px; color: #777;">Copy this JSON to an LLM to modify your song, then paste it back and click IMPORT.</div>
+            </div>
         </div>
 
         <div class="bottom-panel">
@@ -81,6 +103,8 @@
         const kb = document.getElementById('kb');
         const clock = document.getElementById('clock');
         const assignHint = document.getElementById('assign-hint');
+        const aiModal = document.getElementById('ai-modal');
+        const aiText = document.getElementById('ai-text');
         
         let state = { beat: 0, playing: false, recording: false, metronome: false, notes: [] };
         let assignMode = false;
@@ -107,11 +131,8 @@
                 e.preventDefault();
                 if(assignMode) {
                     if(waitingForKey) waitingForKey.classList.remove('waiting');
-                    waitingForKey = k;
-                    k.classList.add('waiting');
-                } else {
-                    trigger(n, 0.8); 
-                }
+                    waitingForKey = k; k.classList.add('waiting');
+                } else { trigger(n, 0.8); }
             };
             k.onmouseup = () => { if(!assignMode) trigger(n, 0); };
             k.onmouseleave = () => { if(!assignMode && k.classList.contains('active')) trigger(n, 0); };
@@ -119,14 +140,27 @@
         }
         updateKeyLabels();
 
+        function toggleAI() { aiModal.style.display = aiModal.style.display === 'flex' ? 'none' : 'flex'; if(aiModal.style.display === 'flex') exportJson(); }
+        function exportJson() { cmd('export'); }
+        function importJson() { cmd('import', aiText.value); }
+        window.onExport = (json) => { aiText.value = json; };
+
+        function copyInstructions() {
+            const prompt = `You are an expert music composer. Modify this 16-beat loop JSON. 
+Format: [pitch, velocity, start_beat, duration]. 
+1. bpm: 20-300.
+2. synth: {osc: 0-3, cut: 20-15000, res: 0.1-15}.
+3. t1: Array of notes.
+Return ONLY raw JSON.`;
+            navigator.clipboard.writeText(prompt + "\n\n" + aiText.value);
+            alert("Instructions + Project JSON copied to clipboard!");
+        }
+
         function toggleAssignMode() {
             assignMode = !assignMode;
             document.getElementById('assign-btn').classList.toggle('active', assignMode);
             assignHint.style.display = assignMode ? 'block' : 'none';
-            if(!assignMode && waitingForKey) {
-                waitingForKey.classList.remove('waiting');
-                waitingForKey = null;
-            }
+            if(!assignMode && waitingForKey) { waitingForKey.classList.remove('waiting'); waitingForKey = null; }
         }
 
         function trigger(n, v) {
@@ -134,7 +168,7 @@
             if (v > 0) keyMap[n]?.classList.add('active'); else keyMap[n]?.classList.remove('active');
         }
 
-        function cmd(c, v) { if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: c, value: v}); }
+        function cmd(c, v) { if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: c, data: v}); }
         function toggleRec() { state.recording = !state.recording; cmd('record', state.recording); }
         function toggleMetro() { state.metronome = !state.metronome; cmd('metronome', state.metronome); }
         function updateParams() {
@@ -146,21 +180,20 @@
         }
 
         window.onkeydown = (e) => { 
+            if(aiModal.style.display === 'flex') return;
             if(assignMode && waitingForKey) {
                 const note = parseInt(waitingForKey.dataset.note);
-                // Remove old mapping for this key
                 for(let k in pcKeys) if(pcKeys[k] === note) delete pcKeys[k];
                 pcKeys[e.key.toLowerCase()] = note;
-                waitingForKey.classList.remove('waiting');
-                waitingForKey = null;
-                updateKeyLabels();
-                return;
+                waitingForKey.classList.remove('waiting'); waitingForKey = null;
+                updateKeyLabels(); return;
             }
             if(!e.repeat && pcKeys[e.key.toLowerCase()]) trigger(pcKeys[e.key.toLowerCase()], 0.8); 
         };
         window.onkeyup = (e) => { if(pcKeys[e.key.toLowerCase()]) trigger(pcKeys[e.key.toLowerCase()], 0); };
 
         canvas.onclick = (e) => {
+            if(aiModal.style.display === 'flex') return;
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left; const y = e.clientY - rect.top;
             const beat = (x / canvas.width) * 16;

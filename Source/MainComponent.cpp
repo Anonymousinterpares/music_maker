@@ -66,6 +66,13 @@ MainComponent::MainComponent()
             else if (cmd == "metronome") metronomeEnabled = (bool)params["value"];
             else if (cmd == "clear") { model.clear(); pendingNotes.clear(); }
             else if (cmd == "save")  saveProject();
+            else if (cmd == "export") {
+                juce::String json = getFullProjectJson();
+                webBrowser->evaluateJavascript("if(window.onExport) window.onExport(" + juce::JSON::toString(json) + ");");
+            }
+            else if (cmd == "import") {
+                loadFullProjectJson(params["data"]);
+            }
         })
         .withEventListener ("editEvent", [this] (juce::var params) {
             juce::String type = params["type"];
@@ -220,6 +227,45 @@ void MainComponent::saveProject()
             RealTimeLogger::log ("Project saved to: " + file.getFullPathName());
         }
     });
+}
+
+juce::String MainComponent::getFullProjectJson()
+{
+    juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+    obj->setProperty("bpm", transport.getBpm());
+    
+    juce::DynamicObject::Ptr synthParams = new juce::DynamicObject();
+    synthParams->setProperty("osc", currentOscType);
+    synthParams->setProperty("cut", currentCutoff);
+    synthParams->setProperty("res", currentRes);
+    obj->setProperty("synth", juce::var(synthParams.get()));
+
+    obj->setProperty("t1", model.toMinifiedVar());
+    
+    return juce::JSON::toString(juce::var(obj));
+}
+
+void MainComponent::loadFullProjectJson(const juce::String& json)
+{
+    auto var = juce::JSON::parse(json);
+    if (var.isObject())
+    {
+        if (var.hasProperty("bpm")) transport.setBpm(var["bpm"]);
+        
+        if (var.hasProperty("synth"))
+        {
+            auto s = var["synth"];
+            if (s.hasProperty("osc")) currentOscType = s["osc"];
+            if (s.hasProperty("cut")) currentCutoff = s["cut"];
+            if (s.hasProperty("res")) currentRes = s["res"];
+            updateSynthParams();
+        }
+        
+        if (var.hasProperty("t1"))
+        {
+            model.fromMinifiedVar(var["t1"]);
+        }
+    }
 }
 
 void MainComponent::timerCallback()
