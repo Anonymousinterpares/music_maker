@@ -65,7 +65,7 @@ MainComponent::MainComponent()
             else if (cmd == "bpm")   transport.setBpm ((double)params["value"]);
             else if (cmd == "metronome") metronomeEnabled = (bool)params["value"];
             else if (cmd == "clear") { model.clear(); pendingNotes.clear(); }
-            else if (cmd == "save")  model.saveToFile (juce::File ("C:\\music_maker\\project.json"));
+            else if (cmd == "save")  saveProject();
         })
         .withEventListener ("editEvent", [this] (juce::var params) {
             juce::String type = params["type"];
@@ -199,6 +199,27 @@ void MainComponent::updateSynthParams()
     for (int i = 0; i < synth.getNumVoices(); ++i)
         if (auto* v = dynamic_cast<SynthVoice*> (synth.getVoice(i)))
             v->updateParameters (currentOscType, currentCutoff, currentRes);
+}
+
+void MainComponent::saveProject()
+{
+    if (lastDirectory.getFullPathName().isEmpty())
+        lastDirectory = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+
+    fileChooser = std::make_unique<juce::FileChooser> ("Save Project", lastDirectory, "*.json");
+
+    auto folderFlags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles;
+
+    fileChooser->launchAsync (folderFlags, [this] (const juce::FileChooser& fc)
+    {
+        auto file = fc.getResult();
+        if (file.getFullPathName().isNotEmpty())
+        {
+            model.saveToFile (file);
+            lastDirectory = file.getParentDirectory();
+            RealTimeLogger::log ("Project saved to: " + file.getFullPathName());
+        }
+    });
 }
 
 void MainComponent::timerCallback()

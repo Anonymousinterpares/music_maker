@@ -148,6 +148,10 @@ private:
 
     void updateSynthParams();
     void playMetronomeClick (const juce::AudioSourceChannelInfo& bufferToFill);
+    void saveProject();
+
+    std::unique_ptr<juce::FileChooser> fileChooser;
+    juce::File lastDirectory;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };
