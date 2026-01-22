@@ -137,8 +137,17 @@ private:
     ProjectModel model;
     double lastProcessedBeat = -1.0;
     double currentSampleRate = 0.0;
+    
+    // Recording state
+    struct PendingNote { int note; double startBeat; };
+    std::vector<PendingNote> pendingNotes;
+
+    // Metronome
+    bool metronomeEnabled = false;
+    double lastClickBeat = -1.0;
 
     void updateSynthParams();
-    
+    void playMetronomeClick (const juce::AudioSourceChannelInfo& bufferToFill);
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

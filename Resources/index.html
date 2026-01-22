@@ -3,198 +3,181 @@
 <head>
     <style>
         :root {
-            --bg-color: #1a1a1a;
-            --panel-color: #2d2d2d;
-            --key-white: #efefef;
-            --key-black: #333;
-            --accent: #00ff99;
-            --text-color: #ddd;
-            --playhead: #ff4444;
+            --bg-color: #121212; --panel-color: #1e1e1e; --accent: #00ff99; --text: #eee; --record: #ff4444;
         }
-        body { background: var(--bg-color); color: var(--text-color); font-family: 'Segoe UI', sans-serif; margin: 0; overflow: hidden; user-select: none; }
+        body { background: var(--bg-color); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; overflow: hidden; user-select: none; }
         
-        header { 
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 10px 20px; background: #111; border-bottom: 2px solid var(--accent); 
-        }
+        header { display: flex; align-items: center; justify-content: space-between; padding: 5px 15px; background: #000; border-bottom: 1px solid #333; height: 40px; }
+        .transport-controls { display: flex; gap: 8px; align-items: center; }
+        .btn { background: #333; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 0.7em; font-weight: bold; }
+        .btn.active { background: var(--accent); color: black; }
+        .btn.recording { background: var(--record); color: white; animation: blink 1s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
         
-        .transport-controls { display: flex; gap: 10px; align-items: center; }
-        .transport-btn { 
-            background: #333; color: white; border: none; padding: 8px 15px; border-radius: 4px; 
-            cursor: pointer; font-weight: bold; font-size: 0.8em;
-        }
-        .transport-btn.active { background: var(--accent); color: black; }
+        .main-layout { display: flex; flex-direction: column; height: 100vh; }
         
-        .bpm-input { background: #000; color: var(--accent); border: 1px solid #444; width: 50px; padding: 5px; border-radius: 4px; text-align: center; }
+        .piano-roll-container { flex-grow: 1; position: relative; background: #111; overflow: hidden; cursor: crosshair; }
+        canvas { width: 100%; height: 100%; }
 
-        .main-container { display: flex; flex-direction: column; height: 100vh; }
-
-        /* Piano Roll Styles */
-        .piano-roll-container {
-            flex-grow: 1; margin: 10px; background: #111; border-radius: 8px; position: relative;
-            overflow: hidden; display: flex;
-        }
-        #piano-roll-canvas { width: 100%; height: 100%; }
+        .bottom-panel { background: var(--panel-color); padding: 10px; display: flex; gap: 20px; align-items: center; border-top: 1px solid #333; }
+        .knob-group { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 0.6em; color: #888; }
         
-        .controls-panel {
-            display: flex; gap: 15px; padding: 10px; background: var(--panel-color); margin: 0 10px; border-radius: 8px;
-        }
-        .control-group { display: flex; flex-direction: column; align-items: center; font-size: 0.7em; }
-
-        .keyboard-area { height: 140px; display: flex; justify-content: center; padding-bottom: 10px; }
-        .keyboard { display: flex; position: relative; height: 120px; background: #000; padding: 5px; border-radius: 4px; }
-        .key { width: 30px; height: 110px; border: 1px solid #777; background: var(--key-white); cursor: pointer; }
-        .key.black { background: var(--key-black); width: 20px; height: 70px; margin-left: -10px; margin-right: -10px; z-index: 2; }
+        .keyboard-area { height: 100px; display: flex; justify-content: center; background: #000; }
+        .keyboard { display: flex; position: relative; height: 90px; }
+        .key { width: 24px; height: 80px; border: 1px solid #444; background: #ddd; position: relative; }
+        .key.black { background: #222; width: 16px; height: 50px; margin-left: -8px; margin-right: -8px; z-index: 2; border-color: #000; }
         .key.active { background: var(--accent) !important; }
-        
-        #debug-log { background: #000; color: #0f0; font-family: monospace; font-size: 10px; height: 60px; overflow-y: auto; text-align: left; padding: 5px; border-top: 1px solid #333; }
+        .key::after { content: attr(data-key); position: absolute; bottom: 2px; width: 100%; text-align: center; font-size: 8px; color: #666; }
+
+        #status { font-size: 10px; color: #555; position: absolute; bottom: 5px; right: 10px; }
     </style>
 </head>
 <body>
-    <div class="main-container">
+    <div class="main-layout">
         <header>
-            <div style="color: var(--accent); letter-spacing: 2px; font-weight: bold;">MUSIC MAKER</div>
+            <div style="color: var(--accent); font-weight: bold; font-size: 0.8em;">MUSIC MAKER v0.2</div>
             <div class="transport-controls">
-                <button id="play-btn" class="transport-btn" onclick="togglePlay(true)">PLAY</button>
-                <button id="stop-btn" class="transport-btn active" onclick="togglePlay(false)">STOP</button>
-                <span style="font-size: 0.7em; color: #666;">BPM:</span>
-                <input type="number" class="bpm-input" id="bpm-val" value="120" onchange="updateBpm(this.value)">
+                <button id="play-btn" class="btn" onclick="cmd('play')">PLAY</button>
+                <button id="stop-btn" class="btn" onclick="cmd('stop')">STOP</button>
+                <button id="rec-btn" class="btn" onclick="toggleRec()">REC</button>
+                <button id="metro-btn" class="btn" onclick="toggleMetro()">METRO</button>
+                <input type="number" id="bpm" value="120" class="btn" style="width: 40px;" onchange="cmd('bpm', this.value)">
+                <button class="btn" onclick="cmd('clear')">CLEAR</button>
+                <button class="btn" onclick="cmd('save')" style="background: #444;">SAVE</button>
             </div>
-            <div id="beat-display" style="font-family: monospace; color: var(--accent); width: 60px;">1.1.0</div>
+            <div id="clock" style="font-family: monospace; font-size: 0.8em; color: var(--accent);">1.1.00</div>
         </header>
 
-        <div class="piano-roll-container">
-            <canvas id="piano-roll-canvas"></canvas>
+        <div class="piano-roll-container" id="pr-container">
+            <canvas id="pr-canvas"></canvas>
         </div>
 
-        <div class="controls-panel">
-            <div class="control-group">
+        <div class="bottom-panel">
+            <div class="knob-group">
                 <span>OSC</span>
-                <select id="osc-type" onchange="updateParams()" style="font-size: 0.8em; background: #000; color: var(--accent); border: 1px solid #444;">
+                <select id="osc" onchange="updateParams()" style="background:#000; color:var(--accent); border:1px solid #444; font-size: 10px;">
                     <option value="0">Sine</option><option value="1" selected>Saw</option><option value="2">Square</option><option value="3">Tri</option>
                 </select>
             </div>
-            <div class="control-group">
+            <div class="knob-group">
                 <span>CUTOFF</span>
-                <input type="range" id="cutoff" min="20" max="15000" value="2000" oninput="updateParams()" style="width: 100px;">
+                <input type="range" id="cutoff" min="20" max="15000" value="2000" oninput="updateParams()">
             </div>
-            <div class="control-group">
+            <div class="knob-group">
                 <span>RES</span>
-                <input type="range" id="res" min="0.1" max="15" step="0.1" value="0.7" oninput="updateParams()" style="width: 100px;">
+                <input type="range" id="res" min="0.1" max="15" step="0.1" value="0.7" oninput="updateParams()">
             </div>
+            <div class="keyboard-area"><div class="keyboard" id="kb"></div></div>
         </div>
-        
-        <div class="keyboard-area"><div class="keyboard" id="kb"></div></div>
-        <div id="debug-log">Ready.</div>
+        <div id="status">BRIDGE: OFFLINE</div>
     </div>
 
     <script>
-        const canvas = document.getElementById('piano-roll-canvas');
+        const canvas = document.getElementById('pr-canvas');
         const ctx = canvas.getContext('2d');
-        const debug = document.getElementById('debug-log');
-        const beatDisplay = document.getElementById('beat-display');
+        const kb = document.getElementById('kb');
+        const clock = document.getElementById('clock');
         
-        let currentBeat = 0;
-        let isPlaying = false;
+        let state = { beat: 0, playing: false, recording: false, metronome: false, notes: [] };
+        const startNote = 48; const numNotes = 25; const blackKeys = [1, 3, 6, 8, 10];
+        const keyMap = {}; 
+        const pcKeys = { 'a':48, 'w':49, 's':50, 'e':51, 'd':52, 'f':53, 't':54, 'g':55, 'y':56, 'h':57, 'u':58, 'j':59, 'k':60 };
 
-        function log(msg) {
-            const div = document.createElement('div');
-            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            debug.prepend(div);
-            if (debug.childNodes.length > 20) debug.removeChild(debug.lastChild);
-        }
-
-        // Keyboard
-        const startNote = 48; const numNotes = 25; const blackKeys = [1, 3, 6, 8, 10]; const keyMap = {};
+        // UI Setup
         for (let i = 0; i < numNotes; i++) {
-            const note = startNote + i;
+            const n = startNote + i;
             const k = document.createElement('div');
             k.className = 'key' + (blackKeys.includes(i % 12) ? ' black' : '');
-            k.onmousedown = (e) => { e.preventDefault(); trigger(note, 0.8); };
-            k.onmouseup = () => trigger(note, 0);
-            k.onmouseleave = () => { if (k.classList.contains('active')) trigger(note, 0); };
-            keyMap[note] = k; document.getElementById('kb').appendChild(k);
+            k.dataset.note = n;
+            for(let key in pcKeys) if(pcKeys[key] === n) k.dataset.key = key.toUpperCase();
+            k.onmousedown = () => trigger(n, 0.8); k.onmouseup = () => trigger(n, 0);
+            k.onmouseleave = () => { if(k.classList.contains('active')) trigger(n, 0); };
+            keyMap[n] = k; kb.appendChild(k);
         }
 
         function trigger(n, v) {
             if (window.__JUCE__) window.__JUCE__.backend.emitEvent('playNoteEvent', {note: n, velocity: v});
-            if (v > 0) keyMap[n].classList.add('active'); else keyMap[n].classList.remove('active');
+            if (v > 0) keyMap[n]?.classList.add('active'); else keyMap[n]?.classList.remove('active');
         }
 
-        // Transport
-        function togglePlay(p) {
-            isPlaying = p;
-            document.getElementById('play-btn').classList.toggle('active', p);
-            document.getElementById('stop-btn').classList.toggle('active', !p);
-            if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: p ? 'play' : 'stop'});
+        function cmd(c, v) { 
+            if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: c, value: v}); 
         }
-
-        function updateBpm(v) {
-            if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: 'bpm', value: parseFloat(v)});
-        }
-
+        function toggleRec() { state.recording = !state.recording; cmd('record', state.recording); }
+        function toggleMetro() { state.metronome = !state.metronome; cmd('metronome', state.metronome); }
         function updateParams() {
             if (window.__JUCE__) {
-                window.__JUCE__.backend.emitEvent("parameterEvent", {name: "osc", value: parseFloat(document.getElementById('osc-type').value)});
+                window.__JUCE__.backend.emitEvent("parameterEvent", {name: "osc", value: parseFloat(document.getElementById('osc').value)});
                 window.__JUCE__.backend.emitEvent("parameterEvent", {name: "cutoff", value: parseFloat(document.getElementById('cutoff').value)});
                 window.__JUCE__.backend.emitEvent("parameterEvent", {name: "res", value: parseFloat(document.getElementById('res').value)});
             }
         }
 
-        window.onTransportUpdate = (msg) => {
-            currentBeat = msg.beat;
-            const bar = Math.floor(currentBeat / 4) + 1;
-            const beat = Math.floor(currentBeat % 4) + 1;
-            beatDisplay.innerText = `${bar}.${beat}.0`;
+        // Computer Keyboard
+        window.onkeydown = (e) => { if(!e.repeat && pcKeys[e.key]) trigger(pcKeys[e.key], 0.8); };
+        window.onkeyup = (e) => { if(pcKeys[e.key]) trigger(pcKeys[e.key], 0); };
+
+        // Piano Roll Interaction
+        canvas.onclick = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left; const y = e.clientY - rect.top;
+            const beat = (x / canvas.width) * 16;
+            const note = Math.floor(startNote + (1 - y / canvas.height) * numNotes);
+            
+            // Toggle note
+            const existing = state.notes.find(n => n.n === note && Math.abs(n.s - beat) < 0.5);
+            if (existing) window.__JUCE__.backend.emitEvent('editEvent', {type: 'remove', note: note, beat: existing.s});
+            else window.__JUCE__.backend.emitEvent('editEvent', {type: 'add', note: note, beat: Math.floor(beat)});
+        };
+
+        // Bridge Updates
+        window.onUpdate = (msg) => {
+            state.beat = msg.beat; state.playing = msg.playing; state.notes = msg.notes;
+            const b = Math.floor(state.beat);
+            clock.innerText = `${Math.floor(b/4)+1}.${(b%4)+1}.${Math.floor((state.beat%1)*100).toString().padStart(2,'0')}`;
+            
+            document.getElementById('play-btn').classList.toggle('active', state.playing);
+            document.getElementById('rec-btn').classList.toggle('recording', state.recording);
+            document.getElementById('metro-btn').classList.toggle('active', state.metronome);
             draw();
         };
 
-        window.onMidiIn = (msg) => {
-            const k = keyMap[msg.note];
-            if (k) msg.velocity > 0 ? k.classList.add('active') : k.classList.remove('active');
-        };
-
-        // Piano Roll Drawing
-        const testNotes = [
-            {n: 60, s: 0, d: 1}, {n: 64, s: 1, d: 1}, {n: 67, s: 2, d: 1}, {n: 72, s: 3, d: 1}
-        ];
+        window.onMidiIn = (msg) => { if(keyMap[msg.note]) msg.velocity > 0 ? keyMap[msg.note].classList.add('active') : keyMap[msg.note].classList.remove('active'); };
 
         function draw() {
             canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#111'; ctx.fillRect(0,0,canvas.width,canvas.height);
             
             // Grid
-            ctx.strokeStyle = '#333'; ctx.beginPath();
-            for(let i=0; i<16; i++) {
-                let x = (i / 16) * canvas.width;
-                ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
-            }
+            ctx.strokeStyle = '#222'; ctx.beginPath();
+            for(let i=0; i<=16; i++) { let x = (i/16)*canvas.width; ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); }
+            for(let i=0; i<=numNotes; i++) { let y = (i/numNotes)*canvas.height; ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); }
             ctx.stroke();
 
             // Notes
-            ctx.fillStyle = '#00ff99';
-            testNotes.forEach(note => {
-                let x = (note.s / 16) * canvas.width;
-                let w = (note.d / 16) * canvas.width;
-                let y = canvas.height - (note.n - 48) * (canvas.height / 25);
-                ctx.fillRect(x, y, w, 10);
+            ctx.fillStyle = varColor('--accent');
+            state.notes.forEach(n => {
+                let x = (n.s / 16) * canvas.width; let w = (n.d / 16) * canvas.width;
+                let y = canvas.height - (n.n - startNote + 1) * (canvas.height / numNotes);
+                ctx.fillRect(x + 1, y + 1, w - 2, (canvas.height / numNotes) - 2);
             });
 
             // Playhead
             ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 2;
-            let px = (currentBeat / 16) * canvas.width;
+            let px = (state.beat / 16) * canvas.width;
             ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvas.height); ctx.stroke();
         }
 
+        function varColor(name) { return getComputedStyle(document.body).getPropertyValue(name).trim(); }
+        
         function checkBridge() {
             if (window.__JUCE__ && window.__JUCE__.backend) {
-                log("BRIDGE ONLINE");
+                document.getElementById('status').innerText = "BRIDGE: ONLINE";
                 updateParams();
             } else { setTimeout(checkBridge, 100); }
         }
         checkBridge();
         window.onresize = draw;
-        draw();
     </script>
 </body>
 </html>

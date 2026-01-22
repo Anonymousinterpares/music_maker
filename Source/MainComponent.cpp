@@ -4,7 +4,7 @@
 MainComponent::MainComponent()
 {
     RealTimeLogger::log ("Application Started");
-    // Setup 8 voices for polyphony
+    
     for (int i = 0; i < 8; ++i)
     {
         auto* voice = new SynthVoice();
@@ -12,7 +12,6 @@ MainComponent::MainComponent()
     }
     synth.addSound (new SynthSound());
 
-    // Enable MIDI Input
     auto midiInputs = juce::MidiInput::getAvailableDevices();
     for (auto& input : midiInputs)
     {
@@ -28,28 +27,52 @@ MainComponent::MainComponent()
         .withEventListener ("playNoteEvent", [this] (juce::var params) {
             int note = params["note"];
             float vel = params["velocity"];
-            if (vel > 0) synth.noteOn (1, note, vel);
-            else        synth.noteOff (1, note, 0.0f, true);
+            if (vel > 0) 
+            {
+                synth.noteOn (1, note, vel);
+                if (transport.getIsRecording())
+                    pendingNotes.push_back ({ note, transport.getCurrentBeat() });
+            }
+            else        
+            {
+                synth.noteOff (1, note, 0.0f, true);
+                if (transport.getIsRecording())
+                {
+                    auto it = std::find_if (pendingNotes.begin(), pendingNotes.end(), [&](const PendingNote& p) { return p.note == note; });
+                    if (it != pendingNotes.end())
+                    {
+                        double duration = transport.getCurrentBeat() - it->startBeat;
+                        if (duration < 0) duration += 16.0; // Handle loop wrap
+                        model.addNote ({ note, 0.8f, it->startBeat, duration });
+                        pendingNotes.erase (it);
+                    }
+                }
+            }
         })
         .withEventListener ("parameterEvent", [this] (juce::var params) {
             juce::String name = params["name"];
             float val = (float)params["value"];
-            
-            RealTimeLogger::log ("Param Change: " + name + " = " + juce::String (val));
-
             if (name == "cutoff") currentCutoff = val;
             else if (name == "res") currentRes = val;
             else if (name == "osc") currentOscType = (int)val;
-            
             updateSynthParams();
         })
         .withEventListener ("transportEvent", [this] (juce::var params) {
             juce::String cmd = params["command"];
             if (cmd == "play")       transport.setPlaying (true);
             else if (cmd == "stop")  transport.setPlaying (false);
+            else if (cmd == "record") transport.setRecording (params["value"]);
             else if (cmd == "bpm")   transport.setBpm ((double)params["value"]);
-            
-            RealTimeLogger::log ("Transport: " + cmd);
+            else if (cmd == "metronome") metronomeEnabled = (bool)params["value"];
+            else if (cmd == "clear") { model.clear(); pendingNotes.clear(); }
+            else if (cmd == "save")  model.saveToFile (juce::File ("C:\\music_maker\\project.json"));
+        })
+        .withEventListener ("editEvent", [this] (juce::var params) {
+            juce::String type = params["type"];
+            if (type == "add") 
+                model.addNote ({ (int)params["note"], 0.8f, (double)params["beat"], 1.0 });
+            else if (type == "remove")
+                model.removeNote ((int)params["note"], (double)params["beat"]);
         })
         .withResourceProvider ([this] (const juce::String&) -> std::optional<juce::WebBrowserComponent::Resource> {
             return juce::WebBrowserComponent::Resource { 
@@ -64,14 +87,7 @@ MainComponent::MainComponent()
 
     setSize (1000, 700);
     setAudioChannels (0, 2);
-
-    // Add some test notes (C Major loop)
-    model.addNote ({ 60, 0.8f, 0.0, 1.0 });
-    model.addNote ({ 64, 0.8f, 1.0, 1.0 });
-    model.addNote ({ 67, 0.8f, 2.0, 1.0 });
-    model.addNote ({ 72, 0.8f, 3.0, 1.0 });
-
-    startTimerHz (60); // 60 FPS for UI updates
+    startTimerHz (60);
 }
 
 MainComponent::~MainComponent() 
@@ -79,7 +95,6 @@ MainComponent::~MainComponent()
     auto midiInputs = juce::MidiInput::getAvailableDevices();
     for (auto& input : midiInputs)
         deviceManager.removeMidiInputDeviceCallback (input.identifier, this);
-
     shutdownAudio(); 
 }
 
@@ -90,17 +105,14 @@ void MainComponent::prepareToPlay (int, double sampleRate)
     for (int i = 0; i < synth.getNumVoices(); ++i)
     {
         if (auto* v = dynamic_cast<SynthVoice*> (synth.getVoice(i)))
-        {
             v->prepare (sampleRate);
-            v->updateParameters (currentOscType, currentCutoff, currentRes);
-        }
     }
+    updateSynthParams();
 }
 
 void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& bufferToFill)
 {
     bufferToFill.clearActiveBufferRegion();
-    
     if (currentSampleRate > 0)
     {
         double beatBefore = transport.getCurrentBeat();
@@ -109,70 +121,73 @@ void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& buffe
 
         if (transport.getIsPlaying())
         {
-            // Check for notes starting in this range
             for (const auto& note : model.getNotes())
             {
-                // Simple wrapping logic for the 16-beat loop
                 bool noteStarted = (note.startBeat >= beatBefore && note.startBeat < beatAfter);
-                
-                // Handle loop wrap
-                if (beatAfter < beatBefore) 
-                    noteStarted = (note.startBeat >= beatBefore || note.startBeat < beatAfter);
-
-                if (noteStarted)
-                {
-                    synth.noteOn (1, note.note, note.velocity);
-                    // For MVP, we'll trigger noteOff after durationBeats using a simple offset
-                    // In a real DAW, we'd use a more precise scheduler, but this works for basic playback
-                }
+                if (beatAfter < beatBefore) noteStarted = (note.startBeat >= beatBefore || note.startBeat < beatAfter);
+                if (noteStarted) synth.noteOn (1, note.note, note.velocity);
 
                 double endBeat = note.startBeat + note.durationBeats;
                 if (endBeat >= 16.0) endBeat -= 16.0;
-
                 bool noteEnded = (endBeat >= beatBefore && endBeat < beatAfter);
-                if (beatAfter < beatBefore)
-                    noteEnded = (endBeat >= beatBefore || endBeat < beatAfter);
+                if (beatAfter < beatBefore) noteEnded = (endBeat >= beatBefore || endBeat < beatAfter);
+                if (noteEnded) synth.noteOff (1, note.note, 0.0f, true);
+            }
 
-                if (noteEnded)
-                {
-                    synth.noteOff (1, note.note, 0.0f, true);
-                }
+            if (metronomeEnabled)
+            {
+                if (std::floor(beatAfter) > std::floor(beatBefore) || (beatAfter < beatBefore && beatAfter >= 0))
+                    playMetronomeClick(bufferToFill);
             }
         }
     }
-
     juce::MidiBuffer incomingMidi; 
     synth.renderNextBlock (*bufferToFill.buffer, incomingMidi, bufferToFill.startSample, bufferToFill.numSamples);
 }
 
-void MainComponent::timerCallback()
+void MainComponent::playMetronomeClick (const juce::AudioSourceChannelInfo& bufferToFill)
 {
-    if (transport.getIsPlaying())
+    float freq = 880.0f;
+    float phaseDelta = (freq * 2.0f * juce::MathConstants<float>::pi) / (float)currentSampleRate;
+    static float phase = 0;
+    for (int i = 0; i < juce::jmin(500, bufferToFill.numSamples); ++i)
     {
-        juce::DynamicObject::Ptr obj = new juce::DynamicObject();
-        obj->setProperty ("beat", transport.getCurrentBeat());
-        
-        juce::String js = "if(window.onTransportUpdate) window.onTransportUpdate(" + juce::JSON::toString(juce::var(obj)) + ");";
-        webBrowser->evaluateJavascript (js);
+        float sample = std::sin(phase) * 0.2f;
+        for (int ch = 0; ch < bufferToFill.buffer->getNumChannels(); ++ch)
+            bufferToFill.buffer->addSample(ch, bufferToFill.startSample + i, sample);
+        phase += phaseDelta;
     }
+    phase = 0; // Reset for next click
 }
 
 void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
 {
     if (message.isNoteOn())
+    {
         synth.noteOn (message.getChannel(), message.getNoteNumber(), message.getFloatVelocity());
+        if (transport.getIsRecording()) pendingNotes.push_back ({ message.getNoteNumber(), transport.getCurrentBeat() });
+    }
     else if (message.isNoteOff())
+    {
         synth.noteOff (message.getChannel(), message.getNoteNumber(), message.getFloatVelocity(), true);
-    else if (message.isAllNotesOff())
-        synth.allNotesOff (0, true);
-
+        if (transport.getIsRecording())
+        {
+            auto it = std::find_if (pendingNotes.begin(), pendingNotes.end(), [&](const PendingNote& p) { return p.note == message.getNoteNumber(); });
+            if (it != pendingNotes.end())
+            {
+                double duration = transport.getCurrentBeat() - it->startBeat;
+                if (duration < 0) duration += 16.0;
+                model.addNote ({ message.getNoteNumber(), message.getFloatVelocity(), it->startBeat, duration });
+                pendingNotes.erase (it);
+            }
+        }
+    }
     juce::MessageManager::callAsync ([this, message]() {
         if (message.isNoteOn() || message.isNoteOff())
         {
             juce::DynamicObject::Ptr obj = new juce::DynamicObject();
             obj->setProperty ("note", message.getNoteNumber());
             obj->setProperty ("velocity", message.isNoteOn() ? message.getFloatVelocity() : 0.0f);
-            
             juce::String js = "if(window.onMidiIn) window.onMidiIn(" + juce::JSON::toString(juce::var(obj)) + ");";
             webBrowser->evaluateJavascript (js);
         }
@@ -182,15 +197,28 @@ void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::Mid
 void MainComponent::updateSynthParams()
 {
     for (int i = 0; i < synth.getNumVoices(); ++i)
-    {
         if (auto* v = dynamic_cast<SynthVoice*> (synth.getVoice(i)))
             v->updateParameters (currentOscType, currentCutoff, currentRes);
+}
+
+void MainComponent::timerCallback()
+{
+    juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+    obj->setProperty ("beat", transport.getCurrentBeat());
+    obj->setProperty ("playing", transport.getIsPlaying());
+    
+    juce::Array<juce::var> notesArray;
+    for (const auto& n : model.getNotes()) {
+        juce::DynamicObject::Ptr nObj = new juce::DynamicObject();
+        nObj->setProperty("n", n.note); nObj->setProperty("s", n.startBeat); nObj->setProperty("d", n.durationBeats);
+        notesArray.add(juce::var(nObj));
     }
+    obj->setProperty("notes", notesArray);
+
+    juce::String js = "if(window.onUpdate) window.onUpdate(" + juce::JSON::toString(juce::var(obj)) + ");";
+    webBrowser->evaluateJavascript (js);
 }
 
 void MainComponent::releaseResources() {}
 void MainComponent::paint (juce::Graphics& g) { g.fillAll (juce::Colours::black); }
-void MainComponent::resized()
-{
-    webBrowser->setBounds (getLocalBounds());
-}
+void MainComponent::resized() { webBrowser->setBounds (getLocalBounds()); }
