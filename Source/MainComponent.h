@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "ProjectModel.h"
 
 // A simple Synthesizer Voice
 class SynthVoice : public juce::SynthesiserVoice
@@ -101,7 +102,9 @@ struct SynthSound : public juce::SynthesiserSound
     bool appliesToChannel (int) override { return true; }
 };
 
-class MainComponent  : public juce::AudioAppComponent, public juce::MidiInputCallback
+class MainComponent  : public juce::AudioAppComponent, 
+                        public juce::MidiInputCallback,
+                        public juce::Timer
 {
 public:
     MainComponent();
@@ -117,6 +120,9 @@ public:
     // MidiInputCallback
     void handleIncomingMidiMessage (juce::MidiInput* source, const juce::MidiMessage& message) override;
 
+    // Timer (for UI Playhead sync)
+    void timerCallback() override;
+
 private:
     std::unique_ptr<juce::WebBrowserComponent> webBrowser;
     
@@ -125,6 +131,12 @@ private:
     float currentCutoff = 2000.0f;
     float currentRes = 0.7f;
     int currentOscType = 1;
+
+    // Sequencing
+    Transport transport;
+    ProjectModel model;
+    double lastProcessedBeat = -1.0;
+    double currentSampleRate = 0.0;
 
     void updateSynthParams();
     

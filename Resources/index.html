@@ -9,238 +9,192 @@
             --key-black: #333;
             --accent: #00ff99;
             --text-color: #ddd;
-            --input-bg: #111;
+            --playhead: #ff4444;
         }
-        body { 
-            background: var(--bg-color); 
-            color: var(--text-color); 
-            font-family: 'Segoe UI', sans-serif; 
-            text-align: center; 
-            margin: 0; 
-            overflow: hidden;
-            user-select: none;
-        }
-        header { padding: 10px; background: #111; border-bottom: 2px solid var(--accent); }
-        h1 { margin: 0; font-weight: 300; letter-spacing: 4px; font-size: 1.1em; color: var(--accent); }
+        body { background: var(--bg-color); color: var(--text-color); font-family: 'Segoe UI', sans-serif; margin: 0; overflow: hidden; user-select: none; }
         
+        header { 
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 20px; background: #111; border-bottom: 2px solid var(--accent); 
+        }
+        
+        .transport-controls { display: flex; gap: 10px; align-items: center; }
+        .transport-btn { 
+            background: #333; color: white; border: none; padding: 8px 15px; border-radius: 4px; 
+            cursor: pointer; font-weight: bold; font-size: 0.8em;
+        }
+        .transport-btn.active { background: var(--accent); color: black; }
+        
+        .bpm-input { background: #000; color: var(--accent); border: 1px solid #444; width: 50px; padding: 5px; border-radius: 4px; text-align: center; }
+
         .main-container { display: flex; flex-direction: column; height: 100vh; }
 
+        /* Piano Roll Styles */
+        .piano-roll-container {
+            flex-grow: 1; margin: 10px; background: #111; border-radius: 8px; position: relative;
+            overflow: hidden; display: flex;
+        }
+        #piano-roll-canvas { width: 100%; height: 100%; }
+        
         .controls-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            padding: 15px;
-            background: var(--panel-color);
-            margin: 10px;
-            border-radius: 8px;
+            display: flex; gap: 15px; padding: 10px; background: var(--panel-color); margin: 0 10px; border-radius: 8px;
         }
+        .control-group { display: flex; flex-direction: column; align-items: center; font-size: 0.7em; }
 
-        .control-row {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            background: rgba(0,0,0,0.2);
-            padding: 10px;
-            border-radius: 4px;
-        }
-
-        .label-group {
-            width: 120px;
-            text-align: left;
-        }
-
-        .control-label { font-size: 0.75em; font-weight: bold; text-transform: uppercase; color: #888; display: block; }
-        .hint { font-size: 0.6em; color: #555; }
-
-        .interaction-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-grow: 1;
-        }
-
-        button {
-            background: #444;
-            color: white;
-            border: none;
-            width: 30px;
-            height: 30px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        button:active { background: var(--accent); color: black; }
-
-        input[type=range] { flex-grow: 1; height: 20px; }
-
-        input[type=number] {
-            background: var(--input-bg);
-            color: var(--accent);
-            border: 1px solid #444;
-            width: 70px;
-            padding: 5px;
-            border-radius: 4px;
-            text-align: center;
-            font-family: monospace;
-        }
-
-        select {
-            background: var(--input-bg);
-            color: var(--accent);
-            border: 1px solid #444;
-            padding: 5px;
-            border-radius: 4px;
-            width: 120px;
-        }
-
-        .keyboard-container {
-            flex-grow: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding-bottom: 10px;
-        }
-        .keyboard { display: flex; position: relative; height: 160px; background: #000; padding: 5px; border-radius: 4px; }
-        .key { width: 35px; height: 150px; border: 1px solid #777; background: var(--key-white); cursor: pointer; }
-        .key.black { background: var(--key-black); width: 24px; height: 90px; margin-left: -12px; margin-right: -12px; z-index: 2; }
+        .keyboard-area { height: 140px; display: flex; justify-content: center; padding-bottom: 10px; }
+        .keyboard { display: flex; position: relative; height: 120px; background: #000; padding: 5px; border-radius: 4px; }
+        .key { width: 30px; height: 110px; border: 1px solid #777; background: var(--key-white); cursor: pointer; }
+        .key.black { background: var(--key-black); width: 20px; height: 70px; margin-left: -10px; margin-right: -10px; z-index: 2; }
         .key.active { background: var(--accent) !important; }
         
-        #debug-log {
-            background: #000;
-            color: #0f0;
-            font-family: monospace;
-            font-size: 10px;
-            height: 80px;
-            overflow-y: auto;
-            text-align: left;
-            padding: 5px;
-            border-top: 1px solid #333;
-            user-select: text;
-        }
+        #debug-log { background: #000; color: #0f0; font-family: monospace; font-size: 10px; height: 60px; overflow-y: auto; text-align: left; padding: 5px; border-top: 1px solid #333; }
     </style>
 </head>
 <body>
     <div class="main-container">
-        <header><h1>MUSIC MAKER HYBRID</h1></header>
+        <header>
+            <div style="color: var(--accent); letter-spacing: 2px; font-weight: bold;">MUSIC MAKER</div>
+            <div class="transport-controls">
+                <button id="play-btn" class="transport-btn" onclick="togglePlay(true)">PLAY</button>
+                <button id="stop-btn" class="transport-btn active" onclick="togglePlay(false)">STOP</button>
+                <span style="font-size: 0.7em; color: #666;">BPM:</span>
+                <input type="number" class="bpm-input" id="bpm-val" value="120" onchange="updateBpm(this.value)">
+            </div>
+            <div id="beat-display" style="font-family: monospace; color: var(--accent); width: 60px;">1.1.0</div>
+        </header>
+
+        <div class="piano-roll-container">
+            <canvas id="piano-roll-canvas"></canvas>
+        </div>
 
         <div class="controls-panel">
-            <div class="control-row">
-                <div class="label-group">
-                    <span class="control-label">Oscillator</span>
-                    <span class="hint">Type</span>
-                </div>
-                <select id="osc-type" onchange="updateParams('osc', this.value)">
-                    <option value="0">Sine</option>
-                    <option value="1" selected>Sawtooth</option>
-                    <option value="2">Square</option>
-                    <option value="3">Triangle</option>
+            <div class="control-group">
+                <span>OSC</span>
+                <select id="osc-type" onchange="updateParams()" style="font-size: 0.8em; background: #000; color: var(--accent); border: 1px solid #444;">
+                    <option value="0">Sine</option><option value="1" selected>Saw</option><option value="2">Square</option><option value="3">Tri</option>
                 </select>
             </div>
-            
-            <div class="control-row">
-                <div class="label-group">
-                    <span class="control-label">Cutoff</span>
-                    <span class="hint">20 - 15000 Hz</span>
-                </div>
-                <div class="interaction-group">
-                    <button onclick="adjust('cutoff', -100)">-</button>
-                    <input type="range" id="cutoff-slider" min="20" max="15000" value="2000" oninput="sync('cutoff', this.value)">
-                    <button onclick="adjust('cutoff', 100)">+</button>
-                    <input type="number" id="cutoff-num" min="20" max="15000" value="2000" onchange="sync('cutoff', this.value)">
-                </div>
+            <div class="control-group">
+                <span>CUTOFF</span>
+                <input type="range" id="cutoff" min="20" max="15000" value="2000" oninput="updateParams()" style="width: 100px;">
             </div>
-            
-            <div class="control-row">
-                <div class="label-group">
-                    <span class="control-label">Resonance</span>
-                    <span class="hint">0.1 - 15.0</span>
-                </div>
-                <div class="interaction-group">
-                    <button onclick="adjust('res', -0.5)">-</button>
-                    <input type="range" id="res-slider" min="0.1" max="15.0" step="0.1" value="0.7" oninput="sync('res', this.value)">
-                    <button onclick="adjust('res', 0.5)">+</button>
-                    <input type="number" id="res-num" min="0.1" max="15.0" step="0.1" value="0.7" onchange="sync('res', this.value)">
-                </div>
+            <div class="control-group">
+                <span>RES</span>
+                <input type="range" id="res" min="0.1" max="15" step="0.1" value="0.7" oninput="updateParams()" style="width: 100px;">
             </div>
         </div>
         
-        <div class="keyboard-container"><div class="keyboard" id="kb"></div></div>
-        <div id="debug-log">Log initialized...</div>
+        <div class="keyboard-area"><div class="keyboard" id="kb"></div></div>
+        <div id="debug-log">Ready.</div>
     </div>
 
     <script>
-        const kb = document.getElementById('kb');
+        const canvas = document.getElementById('piano-roll-canvas');
+        const ctx = canvas.getContext('2d');
         const debug = document.getElementById('debug-log');
+        const beatDisplay = document.getElementById('beat-display');
         
+        let currentBeat = 0;
+        let isPlaying = false;
+
         function log(msg) {
             const div = document.createElement('div');
             div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
             debug.prepend(div);
-            if (debug.childNodes.length > 50) debug.removeChild(debug.lastChild);
+            if (debug.childNodes.length > 20) debug.removeChild(debug.lastChild);
         }
 
-        // Setup Keyboard
-        const startNote = 48; 
-        const numNotes = 25; 
-        const blackKeys = [1, 3, 6, 8, 10];
-        const keyMap = {};
-
+        // Keyboard
+        const startNote = 48; const numNotes = 25; const blackKeys = [1, 3, 6, 8, 10]; const keyMap = {};
         for (let i = 0; i < numNotes; i++) {
             const note = startNote + i;
-            const isBlack = blackKeys.includes(i % 12);
             const k = document.createElement('div');
-            k.className = 'key' + (isBlack ? ' black' : '');
-            k.dataset.note = note;
-            keyMap[note] = k;
-
-            const trigger = (v) => {
-                if (window.__JUCE__) window.__JUCE__.backend.emitEvent('playNoteEvent', {note: note, velocity: v});
-            };
-
-            k.onmousedown = (e) => { e.preventDefault(); trigger(0.8); k.classList.add('active'); };
-            k.onmouseup = () => { trigger(0); k.classList.remove('active'); };
-            k.onmouseleave = () => { if (k.classList.contains('active')) { trigger(0); k.classList.remove('active'); } };
-            kb.appendChild(k);
+            k.className = 'key' + (blackKeys.includes(i % 12) ? ' black' : '');
+            k.onmousedown = (e) => { e.preventDefault(); trigger(note, 0.8); };
+            k.onmouseup = () => trigger(note, 0);
+            k.onmouseleave = () => { if (k.classList.contains('active')) trigger(note, 0); };
+            keyMap[note] = k; document.getElementById('kb').appendChild(k);
         }
 
-        // Parameter Logic
-        function sync(id, val) {
-            const slider = document.getElementById(id + '-slider');
-            const num = document.getElementById(id + '-num');
-            if (slider) slider.value = val;
-            if (num) num.value = val;
-            updateParams(id, val);
+        function trigger(n, v) {
+            if (window.__JUCE__) window.__JUCE__.backend.emitEvent('playNoteEvent', {note: n, velocity: v});
+            if (v > 0) keyMap[n].classList.add('active'); else keyMap[n].classList.remove('active');
         }
 
-        function adjust(id, delta) {
-            const num = document.getElementById(id + '-num');
-            let val = parseFloat(num.value) + delta;
-            val = Math.max(num.min, Math.min(num.max, val));
-            sync(id, val);
+        // Transport
+        function togglePlay(p) {
+            isPlaying = p;
+            document.getElementById('play-btn').classList.toggle('active', p);
+            document.getElementById('stop-btn').classList.toggle('active', !p);
+            if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: p ? 'play' : 'stop'});
         }
 
-        function updateParams(name, val) {
-            if (window.__JUCE__ && window.__JUCE__.backend) {
-                window.__JUCE__.backend.emitEvent("parameterEvent", {name: name, value: parseFloat(val)});
-                log(`Update: ${name} = ${val}`);
+        function updateBpm(v) {
+            if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: 'bpm', value: parseFloat(v)});
+        }
+
+        function updateParams() {
+            if (window.__JUCE__) {
+                window.__JUCE__.backend.emitEvent("parameterEvent", {name: "osc", value: parseFloat(document.getElementById('osc-type').value)});
+                window.__JUCE__.backend.emitEvent("parameterEvent", {name: "cutoff", value: parseFloat(document.getElementById('cutoff').value)});
+                window.__JUCE__.backend.emitEvent("parameterEvent", {name: "res", value: parseFloat(document.getElementById('res').value)});
             }
         }
 
-        window.onMidiIn = (msg) => {
-            const key = keyMap[msg.note];
-            if (key) msg.velocity > 0 ? key.classList.add('active') : key.classList.remove('active');
+        window.onTransportUpdate = (msg) => {
+            currentBeat = msg.beat;
+            const bar = Math.floor(currentBeat / 4) + 1;
+            const beat = Math.floor(currentBeat % 4) + 1;
+            beatDisplay.innerText = `${bar}.${beat}.0`;
+            draw();
         };
+
+        window.onMidiIn = (msg) => {
+            const k = keyMap[msg.note];
+            if (k) msg.velocity > 0 ? k.classList.add('active') : k.classList.remove('active');
+        };
+
+        // Piano Roll Drawing
+        const testNotes = [
+            {n: 60, s: 0, d: 1}, {n: 64, s: 1, d: 1}, {n: 67, s: 2, d: 1}, {n: 72, s: 3, d: 1}
+        ];
+
+        function draw() {
+            canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Grid
+            ctx.strokeStyle = '#333'; ctx.beginPath();
+            for(let i=0; i<16; i++) {
+                let x = (i / 16) * canvas.width;
+                ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
+            }
+            ctx.stroke();
+
+            // Notes
+            ctx.fillStyle = '#00ff99';
+            testNotes.forEach(note => {
+                let x = (note.s / 16) * canvas.width;
+                let w = (note.d / 16) * canvas.width;
+                let y = canvas.height - (note.n - 48) * (canvas.height / 25);
+                ctx.fillRect(x, y, w, 10);
+            });
+
+            // Playhead
+            ctx.strokeStyle = '#ff4444'; ctx.lineWidth = 2;
+            let px = (currentBeat / 16) * canvas.width;
+            ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvas.height); ctx.stroke();
+        }
 
         function checkBridge() {
             if (window.__JUCE__ && window.__JUCE__.backend) {
                 log("BRIDGE ONLINE");
-                updateParams('osc', document.getElementById('osc-type').value);
-                updateParams('cutoff', document.getElementById('cutoff-num').value);
-                updateParams('res', document.getElementById('res-num').value);
+                updateParams();
             } else { setTimeout(checkBridge, 100); }
         }
         checkBridge();
+        window.onresize = draw;
+        draw();
     </script>
 </body>
 </html>

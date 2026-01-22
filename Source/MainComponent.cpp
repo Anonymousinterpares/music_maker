@@ -43,6 +43,14 @@ MainComponent::MainComponent()
             
             updateSynthParams();
         })
+        .withEventListener ("transportEvent", [this] (juce::var params) {
+            juce::String cmd = params["command"];
+            if (cmd == "play")       transport.setPlaying (true);
+            else if (cmd == "stop")  transport.setPlaying (false);
+            else if (cmd == "bpm")   transport.setBpm ((double)params["value"]);
+            
+            RealTimeLogger::log ("Transport: " + cmd);
+        })
         .withResourceProvider ([this] (const juce::String&) -> std::optional<juce::WebBrowserComponent::Resource> {
             return juce::WebBrowserComponent::Resource { 
                 { (const std::byte*) BinaryData::index_html, (const std::byte*) BinaryData::index_html + BinaryData::index_htmlSize },
@@ -56,6 +64,14 @@ MainComponent::MainComponent()
 
     setSize (1000, 700);
     setAudioChannels (0, 2);
+
+    // Add some test notes (C Major loop)
+    model.addNote ({ 60, 0.8f, 0.0, 1.0 });
+    model.addNote ({ 64, 0.8f, 1.0, 1.0 });
+    model.addNote ({ 67, 0.8f, 2.0, 1.0 });
+    model.addNote ({ 72, 0.8f, 3.0, 1.0 });
+
+    startTimerHz (60); // 60 FPS for UI updates
 }
 
 MainComponent::~MainComponent() 
@@ -69,6 +85,7 @@ MainComponent::~MainComponent()
 
 void MainComponent::prepareToPlay (int, double sampleRate)
 {
+    currentSampleRate = sampleRate;
     synth.setCurrentPlaybackSampleRate (sampleRate);
     for (int i = 0; i < synth.getNumVoices(); ++i)
     {
@@ -83,8 +100,61 @@ void MainComponent::prepareToPlay (int, double sampleRate)
 void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& bufferToFill)
 {
     bufferToFill.clearActiveBufferRegion();
+    
+    if (currentSampleRate > 0)
+    {
+        double beatBefore = transport.getCurrentBeat();
+        transport.advance (bufferToFill.numSamples, currentSampleRate);
+        double beatAfter = transport.getCurrentBeat();
+
+        if (transport.getIsPlaying())
+        {
+            // Check for notes starting in this range
+            for (const auto& note : model.getNotes())
+            {
+                // Simple wrapping logic for the 16-beat loop
+                bool noteStarted = (note.startBeat >= beatBefore && note.startBeat < beatAfter);
+                
+                // Handle loop wrap
+                if (beatAfter < beatBefore) 
+                    noteStarted = (note.startBeat >= beatBefore || note.startBeat < beatAfter);
+
+                if (noteStarted)
+                {
+                    synth.noteOn (1, note.note, note.velocity);
+                    // For MVP, we'll trigger noteOff after durationBeats using a simple offset
+                    // In a real DAW, we'd use a more precise scheduler, but this works for basic playback
+                }
+
+                double endBeat = note.startBeat + note.durationBeats;
+                if (endBeat >= 16.0) endBeat -= 16.0;
+
+                bool noteEnded = (endBeat >= beatBefore && endBeat < beatAfter);
+                if (beatAfter < beatBefore)
+                    noteEnded = (endBeat >= beatBefore || endBeat < beatAfter);
+
+                if (noteEnded)
+                {
+                    synth.noteOff (1, note.note, 0.0f, true);
+                }
+            }
+        }
+    }
+
     juce::MidiBuffer incomingMidi; 
     synth.renderNextBlock (*bufferToFill.buffer, incomingMidi, bufferToFill.startSample, bufferToFill.numSamples);
+}
+
+void MainComponent::timerCallback()
+{
+    if (transport.getIsPlaying())
+    {
+        juce::DynamicObject::Ptr obj = new juce::DynamicObject();
+        obj->setProperty ("beat", transport.getCurrentBeat());
+        
+        juce::String js = "if(window.onTransportUpdate) window.onTransportUpdate(" + juce::JSON::toString(juce::var(obj)) + ");";
+        webBrowser->evaluateJavascript (js);
+    }
 }
 
 void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
