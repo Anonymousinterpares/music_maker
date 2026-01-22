@@ -5,10 +5,11 @@
 ## Phase 1: Core Engine Refactoring (The DAW Backbone)
 *Objective: Transition from a single-loop MVP to a multi-track linear DAW.*
 
-*   [ ] **1.1 Multi-Track Mixer Architecture (C++)**
-    *   Create `Track` class (Audio vs MIDI).
-    *   Create `Mixer` class (Summing junction, volume, pan).
-    *   Implement `AudioProcessorGraph` (JUCE) for flexible routing.
+*   [x] **1.1 Multi-Track Mixer Architecture (C++)**
+    *   [x] Create `Track` class (Audio vs MIDI).
+    *   [x] Create `Mixer` class (Summing junction, volume, pan).
+    *   [ ] Implement `AudioProcessorGraph` (JUCE) for flexible routing (Replaced by custom Mixer for now).
+    *   [x] Refactor Synth into `InternalSynthProcessor`.
 *   [ ] **1.2 Linear Timeline & Clip System (C++)**
     *   Replace `Transport` loop logic with a linear sample counter.
     *   Implement `Clip` objects (Start time, Length, Offset).
@@ -16,9 +17,10 @@
 *   [ ] **1.3 Thread-Safe Project Model**
     *   Implement a lock-free "Audio Thread View" of the project.
     *   Ensure Message Thread edits (from JS) don't block the Audio Thread.
-*   [ ] **1.4 ASIO Implementation (C++)**
-    *   Integrate Steinberg ASIO SDK.
-    *   **UI:** Create HTML Settings Menu that populates from the C++ data.
+*   [x] **1.4 ASIO Implementation & Persistence (C++)**
+    *   Integrate Steinberg ASIO SDK. (Already implemented)
+    *   **Persistence:** Save and autoload last audio setup (XML).
+    *   **UI:** Create HTML Settings Menu that populates from the C++ data. (Already implemented)
 
 ## Phase 2: Professional Audio & Plugin Hosting
 *Objective: Support industry-standard tools and recording.*

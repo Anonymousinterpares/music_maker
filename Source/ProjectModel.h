@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <vector>
 #include <algorithm>
+#include <mutex>
 
 struct NoteEvent
 {
@@ -25,7 +26,7 @@ public:
 
     void addNote (NoteEvent note)
     {
-        // AI Safety Invariant: Clamp values
+        std::lock_guard<std::mutex> lock(modelMutex);
         note.note = juce::jlimit(0, 127, note.note);
         note.velocity = juce::jlimit(0.0f, 1.0f, note.velocity);
         note.durationBeats = std::max(0.01, note.durationBeats);
@@ -36,19 +37,25 @@ public:
 
     void removeNote (int note, double startBeat)
     {
+        std::lock_guard<std::mutex> lock(modelMutex);
         notes.erase (std::remove_if (notes.begin(), notes.end(), [&](const NoteEvent& e) {
             return e.note == note && std::abs(e.startBeat - startBeat) < 0.1;
         }), notes.end());
     }
 
-    void clear() { notes.clear(); }
+    void clear() { 
+        std::lock_guard<std::mutex> lock(modelMutex);
+        notes.clear(); 
+    }
 
-    const std::vector<NoteEvent>& getNotes() const { return notes; }
+    std::vector<NoteEvent> getNotes() const { 
+        std::lock_guard<std::mutex> lock(modelMutex);
+        return notes; 
+    }
 
-    // Minified Protocol for AI (GEMINI.md Rule 4)
-    // t1: [[pitch, vel, start, dur], ...]
     juce::var toMinifiedVar() const
     {
+        std::lock_guard<std::mutex> lock(modelMutex);
         juce::Array<juce::var> notesArray;
         for (const auto& n : notes)
         {
@@ -83,13 +90,14 @@ public:
     void saveToFile (const juce::File& file)
     {
         juce::DynamicObject::Ptr root = new juce::DynamicObject();
-        root->setProperty("bpm", 120.0); // Simple default or pass as param
+        root->setProperty("bpm", 120.0);
         root->setProperty("t1", toMinifiedVar());
         file.replaceWithText (juce::JSON::toString(juce::var(root)));
     }
 
 private:
     std::vector<NoteEvent> notes;
+    mutable std::mutex modelMutex;
 };
 
 class Transport
