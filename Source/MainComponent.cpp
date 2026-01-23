@@ -96,6 +96,18 @@ MainComponent::MainComponent()
         })
         .withEventListener ("mixerEvent", [this] (juce::var params) {
             juce::String cmd = params["command"];
+            
+            if (cmd == "addTrack") {
+                juce::String name = params["name"];
+                auto synthProc = std::make_unique<InternalSynthProcessor>();
+                if (currentSampleRate > 0) synthProc->prepareToPlay(currentSampleRate, 512);
+                auto t = std::make_unique<InstrumentTrack> (name);
+                t->setInstrument (std::move (synthProc));
+                mixer.addTrack (std::move (t));
+                RealTimeLogger::log("Added Track: " + name);
+                return;
+            }
+
             int trackIndex = params["trackIndex"];
             if (auto* track = mixer.getTrack(trackIndex)) {
                 if (cmd == "mute") {
@@ -115,15 +127,6 @@ MainComponent::MainComponent()
                     updateSynthParams();
                     RealTimeLogger::log("Selected Track: " + track->getName());
                 }
-            }
-            if (cmd == "addTrack") {
-                juce::String name = params["name"];
-                auto synthProc = std::make_unique<InternalSynthProcessor>();
-                if (currentSampleRate > 0) synthProc->prepareToPlay(currentSampleRate, 512);
-                auto t = std::make_unique<InstrumentTrack> (name);
-                t->setInstrument (std::move (synthProc));
-                mixer.addTrack (std::move (t));
-                RealTimeLogger::log("Added Track: " + name);
             }
         })
         .withResourceProvider ([this] (const juce::String&) -> std::optional<juce::WebBrowserComponent::Resource> {

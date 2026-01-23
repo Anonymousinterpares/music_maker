@@ -273,15 +273,25 @@
             else window.__JUCE__.backend.emitEvent('editEvent', {type: 'add', note: note, beat: Math.floor(beat)});
         };
 
+        let lastTrackState = "";
+
         window.onUpdate = (msg) => {
             state.beat = msg.beat; state.playing = msg.playing; state.notes = msg.notes;
             state.tracks = msg.tracks || [];
             state.selectedTrack = msg.selectedTrack !== undefined ? msg.selectedTrack : 0;
+            
             const b = Math.floor(state.beat);
             clock.innerText = `${Math.floor(b/4)+1}.${(b%4)+1}.${Math.floor((state.beat%1)*100).toString().padStart(2,'0')}`;
             document.getElementById('play-btn').classList.toggle('active', state.playing);
             if(msg.logs) addLogs(msg.logs);
-            updateTrackUI();
+
+            // Only re-render track list if state changed to prevent click-stealing
+            const currentState = JSON.stringify(state.tracks) + state.selectedTrack;
+            if (currentState !== lastTrackState) {
+                updateTrackUI();
+                lastTrackState = currentState;
+            }
+            
             draw();
         };
 
@@ -292,32 +302,32 @@
                 const isSelected = (i === state.selectedTrack);
                 const div = document.createElement('div');
                 div.className = 'track-item';
-                div.style = `font-size: 10px; padding: 6px; background: ${isSelected ? '#333' : '#222'}; border-radius: 4px; display: flex; flex-direction: column; gap: 4px; border: 1px solid ${isSelected ? 'var(--accent)' : '#444'}; margin-bottom: 4px;`;
+                div.style = `font-size: 10px; padding: 6px; background: ${isSelected ? '#333' : '#222'}; border-radius: 4px; display: flex; flex-direction: column; gap: 4px; border: 1px solid ${isSelected ? 'var(--accent)' : '#444'}; margin-bottom: 4px; cursor: default;`;
                 
                 const topRow = document.createElement('div');
-                topRow.style = "display: flex; justify-content: space-between; align-items: center;";
+                topRow.style = "display: flex; justify-content: space-between; align-items: center; pointer-events: none;";
                 topRow.innerHTML = `<span style="font-weight:bold; color:${isSelected ? 'var(--accent)' : '#ccc'};">${t.name}</span>`;
                 
                 const controls = document.createElement('div');
-                controls.style = "display: flex; gap: 2px;";
+                controls.style = "display: flex; gap: 2px; pointer-events: auto;"; // Ensure children can be clicked
                 
                 const selBtn = document.createElement('button');
                 selBtn.className = 'btn' + (isSelected ? ' active' : '');
                 selBtn.innerText = 'SELECT';
-                selBtn.style = "padding: 1px 4px; font-size: 8px;";
-                selBtn.onclick = () => mixerCmd('select', i);
+                selBtn.style = "padding: 2px 4px; font-size: 8px; cursor: pointer;";
+                selBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); mixerCmd('select', i); };
                 
                 const muteBtn = document.createElement('button');
                 muteBtn.className = 'btn' + (t.mute ? ' active' : '');
                 muteBtn.innerText = 'M';
-                muteBtn.style = "padding: 1px 6px; font-size: 9px;";
-                muteBtn.onclick = (e) => { e.stopPropagation(); mixerCmd('mute', i, t.mute); };
+                muteBtn.style = "padding: 2px 6px; font-size: 9px; cursor: pointer;";
+                muteBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); mixerCmd('mute', i, t.mute); };
                 
                 const soloBtn = document.createElement('button');
                 soloBtn.className = 'btn' + (t.solo ? ' active' : '');
                 soloBtn.innerText = 'S';
-                soloBtn.style = "padding: 1px 6px; font-size: 9px;";
-                soloBtn.onclick = (e) => { e.stopPropagation(); mixerCmd('solo', i, t.solo); };
+                soloBtn.style = "padding: 2px 6px; font-size: 9px; cursor: pointer;";
+                soloBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); mixerCmd('solo', i, t.solo); };
                 
                 controls.appendChild(selBtn);
                 controls.appendChild(muteBtn);
@@ -325,15 +335,15 @@
                 topRow.appendChild(controls);
                 
                 const sliders = document.createElement('div');
-                sliders.style = "display: flex; flex-direction: column; gap: 2px;";
+                sliders.style = "display: flex; flex-direction: column; gap: 2px; pointer-events: auto;";
                 
                 const volRow = document.createElement('div');
                 volRow.style = "display: flex; align-items: center; gap: 4px;";
                 volRow.innerHTML = '<span style="font-size:8px; width:20px;">VOL</span>';
                 const volSlider = document.createElement('input');
                 volSlider.type = "range"; volSlider.min = 0; volSlider.max = 1.5; volSlider.step = 0.01;
-                volSlider.value = t.vol; volSlider.style = "flex-grow: 1; height: 4px;";
-                volSlider.oninput = (e) => mixerCmd('vol', i, e.target.value);
+                volSlider.value = t.vol; volSlider.style = "flex-grow: 1; height: 4px; cursor: pointer;";
+                volSlider.oninput = (e) => { e.stopPropagation(); mixerCmd('vol', i, e.target.value); };
                 volRow.appendChild(volSlider);
 
                 const panRow = document.createElement('div');
@@ -341,8 +351,8 @@
                 panRow.innerHTML = '<span style="font-size:8px; width:20px;">PAN</span>';
                 const panSlider = document.createElement('input');
                 panSlider.type = "range"; panSlider.min = -1; panSlider.max = 1; panSlider.step = 0.01;
-                panSlider.value = t.pan !== undefined ? t.pan : 0; panSlider.style = "flex-grow: 1; height: 4px;";
-                panSlider.oninput = (e) => mixerCmd('pan', i, e.target.value);
+                panSlider.value = t.pan !== undefined ? t.pan : 0; panSlider.style = "flex-grow: 1; height: 4px; cursor: pointer;";
+                panSlider.oninput = (e) => { e.stopPropagation(); mixerCmd('pan', i, e.target.value); };
                 panRow.appendChild(panSlider);
                 
                 sliders.appendChild(volRow);
