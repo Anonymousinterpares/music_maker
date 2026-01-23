@@ -29,22 +29,24 @@ MainComponent::MainComponent()
             int note = params["note"];
             float vel = params["velocity"];
             
-            if (auto* track = mixer.getTrack(selectedTrackIndex)) {
-                if (auto* inst = dynamic_cast<InstrumentTrack*>(track)) {
-                    if (auto* synth = dynamic_cast<InternalSynthProcessor*>(inst->getProcessor())) {
-                        if (vel > 0) synth->noteOn(note, vel);
-                        else        synth->noteOff(note, 0.0f, true);
-                    }
-                }
-            }
+            if (vel > 0) postMidiToEngine(juce::MidiMessage::noteOn(1, note, vel));
+            else        postMidiToEngine(juce::MidiMessage::noteOff(1, note, 0.0f));
         })
         .withEventListener ("editEvent", [this] (juce::var params) {
             juce::String type = params["type"];
             int note = params["note"];
-            double beat = params["beat"];
-            if (type == "add") model.addNote({ note, 0.8f, beat, 1.0 });
-            else if (type == "remove") model.removeNote(note, beat);
-            RealTimeLogger::log("Grid Edit: " + type + " " + juce::String(note));
+            double rawBeat = params["beat"];
+            
+            // Quantize to 16th notes (0.25 beats) for the backend model
+            double quantizedBeat = std::round(rawBeat * 4.0) / 4.0;
+
+            if (type == "add") {
+                model.addNote({ note, 0.8f, quantizedBeat, 1.0 });
+                RealTimeLogger::log("Grid Add: " + juce::String(note) + " at " + juce::String(quantizedBeat, 2));
+            } else if (type == "remove") {
+                model.removeNote(note, quantizedBeat);
+                RealTimeLogger::log("Grid Remove: " + juce::String(note) + " at " + juce::String(quantizedBeat, 2));
+            }
         })
         .withEventListener ("audioDeviceEvent", [this] (juce::var params) {
             juce::String cmd = params["command"];
@@ -69,32 +71,43 @@ MainComponent::MainComponent()
                 transport.setPlaying (false); 
                 transport.reset(); 
                 mixer.allNotesOff();
-                RealTimeLogger::log ("Transport Stopped - All Notes Off");
+                RealTimeLogger::log ("Transport Stopped");
             }
             else if (cmd == "record") {
-                bool shouldRecord = params["value"];
-                transport.setRecording (shouldRecord);
-                if (!shouldRecord) activeRecordingNotes.clear();
-                RealTimeLogger::log (shouldRecord ? "Recording Armed" : "Recording Stopped");
+                bool val = (bool)params["value"];
+                transport.setRecording (val);
+                if (!val) activeRecordingNotes.clear();
+                RealTimeLogger::log (val ? "Recording Armed" : "Recording Stopped");
             }
-            else if (cmd == "bpm")   transport.setBpm ((double)params["data"]);
+            else if (cmd == "bpm")   transport.setBpm ((double)params["value"]);
             else if (cmd == "metronome") {
-                metronomeEnabled = (bool)params["data"];
+                metronomeEnabled = (bool)params["value"];
                 RealTimeLogger::log (juce::String("Metronome: ") + (metronomeEnabled ? "ON" : "OFF"));
             }
-            else if (cmd == "clear") { model.clear(); }
+            else if (cmd == "clear") { model.clear(); RealTimeLogger::log("Project Cleared"); }
             else if (cmd == "save")  saveProject();
             else if (cmd == "export") {
                 webBrowser->evaluateJavascript("if(window.onExport) window.onExport(" + getFullProjectJson() + ");");
             }
-            else if (cmd == "import") loadFullProjectJson(params["data"]);
+            else if (cmd == "import") {
+                loadFullProjectJson(params["value"]);
+                RealTimeLogger::log("Project Imported");
+            }
         })
         .withEventListener ("mixerEvent", [this] (juce::var params) {
             juce::String cmd = params["command"];
             int trackIndex = params["trackIndex"];
             if (auto* track = mixer.getTrack(trackIndex)) {
-                if (cmd == "mute") track->setMuted((bool)params["value"]);
-                else if (cmd == "solo") track->setSoloed((bool)params["value"]);
+                if (cmd == "mute") {
+                    bool val = (bool)params["value"];
+                    track->setMuted(val);
+                    RealTimeLogger::log(track->getName() + (val ? " Muted" : " Unmuted"));
+                }
+                else if (cmd == "solo") {
+                    bool val = (bool)params["value"];
+                    track->setSoloed(val);
+                    RealTimeLogger::log(track->getName() + (val ? " Soloed" : " Unsoloed"));
+                }
                 else if (cmd == "vol") track->setVolume((float)params["value"]);
                 else if (cmd == "pan") track->setPan((float)params["value"]);
                 else if (cmd == "select") {
@@ -147,79 +160,59 @@ void MainComponent::prepareToPlay (int samplesPerBlockExpected, double sampleRat
 
 void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& bufferToFill)
 {
-    // 1. Process Mixer (Master Sum)
-    juce::MidiBuffer midiMessages;
-    mixer.processBlock (*bufferToFill.buffer, midiMessages);
-
-    // 2. Transport logic and Note Triggering
-    if (currentSampleRate > 0)
+    if (currentSampleRate <= 0)
     {
-        double beatBefore = transport.getCurrentBeat();
-        if (transport.getIsPlaying())
-            transport.advance (bufferToFill.numSamples, currentSampleRate);
-        double beatAfter = transport.getCurrentBeat();
+        bufferToFill.clearActiveBufferRegion();
+        return;
+    }
 
-        // Trigger notes ONLY for the selected track (Temporary until Clips are per-track)
-        if (transport.getIsPlaying())
+    // 1. Advance Transport and Trigger Notes for this block
+    double beatBefore = transport.getCurrentBeat();
+    if (transport.getIsPlaying())
+        transport.advance (bufferToFill.numSamples, currentSampleRate);
+    double beatAfter = transport.getCurrentBeat();
+
+    if (transport.getIsPlaying())
+    {
+        if (auto* track = mixer.getTrack(selectedTrackIndex))
         {
-            if (auto* track = mixer.getTrack(selectedTrackIndex))
+            if (auto* inst = dynamic_cast<InstrumentTrack*>(track))
             {
-                if (auto* inst = dynamic_cast<InstrumentTrack*>(track))
+                if (auto* synth = dynamic_cast<InternalSynthProcessor*>(inst->getProcessor()))
                 {
-                    if (auto* synth = dynamic_cast<InternalSynthProcessor*>(inst->getProcessor()))
+                    const auto& notes = model.getNotes();
+                    for (const auto& note : notes)
                     {
-                        for (const auto& note : model.getNotes())
-                        {
-                            bool noteStarted = (note.startBeat >= beatBefore && note.startBeat < beatAfter);
-                            if (beatAfter < beatBefore) noteStarted = (note.startBeat >= beatBefore || note.startBeat < beatAfter);
-                            if (noteStarted) synth->noteOn (note.note, note.velocity);
+                        bool noteStarted = (note.startBeat >= beatBefore && note.startBeat < beatAfter);
+                        if (beatAfter < beatBefore) noteStarted = (note.startBeat >= beatBefore || note.startBeat < beatAfter);
+                        if (noteStarted) synth->noteOn (note.note, note.velocity);
 
-                            double endBeat = note.startBeat + note.durationBeats;
-                            if (endBeat >= 16.0) endBeat -= 16.0;
-                            bool noteEnded = (endBeat >= beatBefore && endBeat < beatAfter);
-                            if (beatAfter < beatBefore) noteEnded = (endBeat >= beatBefore || endBeat < beatAfter);
-                            if (noteEnded) synth->noteOff (note.note, 0.0f, true);
-                        }
+                        double endBeat = note.startBeat + note.durationBeats;
+                        if (endBeat >= 16.0) endBeat -= 16.0;
+                        bool noteEnded = (endBeat >= beatBefore && endBeat < beatAfter);
+                        if (beatAfter < beatBefore) noteEnded = (endBeat >= beatBefore || endBeat < beatAfter);
+                        if (noteEnded) synth->noteOff (note.note, 0.0f, true);
                     }
                 }
             }
         }
+    }
 
-        // 3. Metronome Overlay (Post-Mixer)
-        if (metronomeEnabled && transport.getIsPlaying())
-        {
-            if (std::floor(beatAfter) != std::floor(beatBefore) || (beatBefore > beatAfter))
-                playMetronomeClick(bufferToFill);
-        }
+    // 2. Process Mixer (Master Sum) - Mixer handles clearing the buffer
+    juce::MidiBuffer midiMessages;
+    mixer.processBlock (*bufferToFill.buffer, midiMessages);
+
+    // 3. Post-Mixer Overlays (Metronome)
+    if (metronomeEnabled && transport.getIsPlaying())
+    {
+        if (std::floor(beatAfter) != std::floor(beatBefore) || (beatBefore > beatAfter))
+            playMetronomeClick(bufferToFill);
     }
 }
 
 void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
 {
-    // MIDI RECORDING LOGIC
-    if (transport.getIsRecording()) {
-        if (message.isNoteOn()) {
-            activeRecordingNotes[message.getNoteNumber()] = transport.getCurrentBeat();
-        } else if (message.isNoteOff()) {
-            if (activeRecordingNotes.count(message.getNoteNumber())) {
-                double start = activeRecordingNotes[message.getNoteNumber()];
-                double end = transport.getCurrentBeat();
-                if (end < start) end += 16.0; // Loop wrap
-                model.addNote({ message.getNoteNumber(), message.getFloatVelocity(), start, end - start });
-                activeRecordingNotes.erase(message.getNoteNumber());
-            }
-        }
-    }
-
-    // Playback on selected track
-    if (auto* track = mixer.getTrack(selectedTrackIndex)) {
-        if (auto* inst = dynamic_cast<InstrumentTrack*>(track)) {
-            if (auto* synth = dynamic_cast<InternalSynthProcessor*>(inst->getProcessor())) {
-                if (message.isNoteOn()) synth->noteOn(message.getNoteNumber(), message.getFloatVelocity());
-                else if (message.isNoteOff()) synth->noteOff(message.getNoteNumber(), message.getFloatVelocity(), true);
-            }
-        }
-    }
+    postMidiToEngine(message);
     
     juce::MessageManager::callAsync ([this, message]() {
         if (message.isNoteOn() || message.isNoteOff())
@@ -230,6 +223,43 @@ void MainComponent::handleIncomingMidiMessage (juce::MidiInput*, const juce::Mid
             webBrowser->evaluateJavascript ("if(window.onMidiIn) window.onMidiIn(" + juce::JSON::toString(juce::var(obj.get())) + ");");
         }
     });
+}
+
+void MainComponent::postMidiToEngine (const juce::MidiMessage& message)
+{
+    // MIDI RECORDING LOGIC
+    if (transport.getIsRecording()) {
+        if (message.isNoteOn()) {
+            activeRecordingNotes[message.getNoteNumber()] = { transport.getCurrentBeat(), message.getFloatVelocity() };
+        } else if (message.isNoteOff() || (message.isNoteOn() && message.getVelocity() == 0)) {
+            int n = message.getNoteNumber();
+            if (activeRecordingNotes.count(n)) {
+                double start = activeRecordingNotes[n].startBeat;
+                float vel = activeRecordingNotes[n].velocity;
+                double end = transport.getCurrentBeat();
+                
+                if (end < start) end += 16.0; // Loop wrap
+                
+                double duration = end - start;
+                if (duration < 0.05) duration = 0.1;
+
+                model.addNote({ n, vel, start, duration });
+                activeRecordingNotes.erase(n);
+                
+                RealTimeLogger::log("Captured: " + juce::String(n) + " @ beat " + juce::String(start, 2));
+            }
+        }
+    }
+
+    // Live Monitoring
+    if (auto* track = mixer.getTrack(selectedTrackIndex)) {
+        if (auto* inst = dynamic_cast<InstrumentTrack*>(track)) {
+            if (auto* synth = dynamic_cast<InternalSynthProcessor*>(inst->getProcessor())) {
+                if (message.isNoteOn()) synth->noteOn(message.getNoteNumber(), message.getFloatVelocity());
+                else if (message.isNoteOff()) synth->noteOff(message.getNoteNumber(), message.getFloatVelocity(), true);
+            }
+        }
+    }
 }
 
 void MainComponent::playMetronomeClick (const juce::AudioSourceChannelInfo& bufferToFill)
@@ -431,6 +461,14 @@ void MainComponent::timerCallback()
     obj->setProperty("tracks", tracksArray);
 
     auto logs = RealTimeLogger::getPendingUiLogs();
+    
+    // Recording Pulse (to verify transport movement while recording)
+    if (transport.getIsRecording()) {
+        static int pulseCount = 0;
+        if (++pulseCount % 120 == 0) // Every ~2 seconds
+            RealTimeLogger::log("REC RUNNING: beat " + juce::String(transport.getCurrentBeat(), 1));
+    }
+
     if (logs.size() > 0) {
         juce::Array<juce::var> logsVar;
         for (auto& l : logs) logsVar.add (l);

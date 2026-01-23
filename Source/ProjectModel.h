@@ -31,6 +31,11 @@ public:
         note.velocity = juce::jlimit(0.0f, 1.0f, note.velocity);
         note.durationBeats = std::max(0.01, note.durationBeats);
 
+        // Deduplication: Remove any existing note at the exact same position and pitch
+        notes.erase (std::remove_if (notes.begin(), notes.end(), [&](const NoteEvent& e) {
+            return e.note == note.note && std::abs(e.startBeat - note.startBeat) < 0.001;
+        }), notes.end());
+
         notes.push_back (note);
         std::sort (notes.begin(), notes.end());
     }

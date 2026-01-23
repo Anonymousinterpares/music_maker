@@ -45,14 +45,15 @@ private:
     double currentSampleRate = 0.0;
     
     // Recording state (Professional Logic)
-    struct ActiveNote { int note; double startBeat; };
-    std::map<int, double> activeRecordingNotes; // noteNumber -> startBeat
+    struct RecordedNote { double startBeat; float velocity; };
+    std::map<int, RecordedNote> activeRecordingNotes; // noteNumber -> {startBeat, velocity}
 
     // Metronome
     bool metronomeEnabled = false;
     double lastClickBeat = -1.0;
 
     void updateSynthParams();
+    void postMidiToEngine (const juce::MidiMessage& message);
     void playMetronomeClick (const juce::AudioSourceChannelInfo& bufferToFill);
     void saveProject();
     

@@ -160,7 +160,7 @@
         }
         updateKeyLabels();
 
-        function cmd(c, d) { if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: c, data: d}); }
+        function cmd(c, v) { if (window.__JUCE__) window.__JUCE__.backend.emitEvent('transportEvent', {command: c, value: v}); }
         function toggleAI() { aiModal.style.display = aiModal.style.display === 'flex' ? 'none' : 'flex'; if(aiModal.style.display === 'flex') exportJson(); }
         function exportJson() { cmd('export'); }
         function importJson() { cmd('import', document.getElementById('ai-text').value); }
