@@ -24,59 +24,78 @@ class ProjectModel
 public:
     ProjectModel() = default;
 
-    void addNote (NoteEvent note)
+    void addNote (int trackIndex, NoteEvent note)
     {
         std::lock_guard<std::mutex> lock(modelMutex);
         note.note = juce::jlimit(0, 127, note.note);
         note.velocity = juce::jlimit(0.0f, 1.0f, note.velocity);
         note.durationBeats = std::max(0.01, note.durationBeats);
 
-        // Deduplication: Remove any existing note at the exact same position and pitch
-        notes.erase (std::remove_if (notes.begin(), notes.end(), [&](const NoteEvent& e) {
-            return e.note == note.note && std::abs(e.startBeat - note.startBeat) < 0.001;
-        }), notes.end());
+        auto& trackNotes = trackData[trackIndex];
 
-        notes.push_back (note);
-        std::sort (notes.begin(), notes.end());
+        // Deduplication: Remove any existing note at the exact same position and pitch
+        trackNotes.erase (std::remove_if (trackNotes.begin(), trackNotes.end(), [&](const NoteEvent& e) {
+            return e.note == note.note && std::abs(e.startBeat - note.startBeat) < 0.001;
+        }), trackNotes.end());
+
+        trackNotes.push_back (note);
+        std::sort (trackNotes.begin(), trackNotes.end());
     }
 
-    void removeNote (int note, double startBeat)
+    void removeNote (int trackIndex, int note, double startBeat)
     {
         std::lock_guard<std::mutex> lock(modelMutex);
-        notes.erase (std::remove_if (notes.begin(), notes.end(), [&](const NoteEvent& e) {
+        if (trackData.find(trackIndex) == trackData.end()) return;
+
+        auto& trackNotes = trackData[trackIndex];
+        trackNotes.erase (std::remove_if (trackNotes.begin(), trackNotes.end(), [&](const NoteEvent& e) {
             return e.note == note && std::abs(e.startBeat - startBeat) < 0.1;
-        }), notes.end());
+        }), trackNotes.end());
     }
 
     void clear() { 
         std::lock_guard<std::mutex> lock(modelMutex);
-        notes.clear(); 
+        trackData.clear(); 
     }
 
-    std::vector<NoteEvent> getNotes() const { 
+    std::vector<NoteEvent> getNotes(int trackIndex) const { 
         std::lock_guard<std::mutex> lock(modelMutex);
-        return notes; 
+        auto it = trackData.find(trackIndex);
+        if (it != trackData.end()) return it->second;
+        return {}; 
     }
 
-    juce::var toMinifiedVar() const
+    std::map<int, std::vector<NoteEvent>> getAllNotes() const {
+        std::lock_guard<std::mutex> lock(modelMutex);
+        return trackData;
+    }
+
+    juce::var toMinifiedVar(int trackIndex) const
     {
         std::lock_guard<std::mutex> lock(modelMutex);
         juce::Array<juce::var> notesArray;
-        for (const auto& n : notes)
-        {
-            juce::Array<juce::var> noteData;
-            noteData.add(n.note);
-            noteData.add(std::round(n.velocity * 100) / 100.0);
-            noteData.add(std::round(n.startBeat * 100) / 100.0);
-            noteData.add(std::round(n.durationBeats * 100) / 100.0);
-            notesArray.add(noteData);
+        auto it = trackData.find(trackIndex);
+        if (it != trackData.end()) {
+            for (const auto& n : it->second)
+            {
+                juce::Array<juce::var> noteData;
+                noteData.add(n.note);
+                noteData.add(std::round(n.velocity * 100) / 100.0);
+                noteData.add(std::round(n.startBeat * 100) / 100.0);
+                noteData.add(std::round(n.durationBeats * 100) / 100.0);
+                notesArray.add(noteData);
+            }
         }
         return notesArray;
     }
 
-    void fromMinifiedVar(const juce::var& v)
+    void fromMinifiedVar(int trackIndex, const juce::var& v)
     {
-        clear();
+        {
+            std::lock_guard<std::mutex> lock(modelMutex);
+            trackData[trackIndex].clear();
+        }
+        
         if (auto* arr = v.getArray())
         {
             for (auto& noteVar : *arr)
@@ -85,7 +104,7 @@ public:
                 {
                     if (n->size() >= 4)
                     {
-                        addNote({ (int)(*n)[0], (float)(*n)[1], (double)(*n)[2], (double)(*n)[3] });
+                        addNote(trackIndex, { (int)(*n)[0], (float)(*n)[1], (double)(*n)[2], (double)(*n)[3] });
                     }
                 }
             }
@@ -96,12 +115,17 @@ public:
     {
         juce::DynamicObject::Ptr root = new juce::DynamicObject();
         root->setProperty("bpm", 120.0);
-        root->setProperty("t1", toMinifiedVar());
+        
+        std::lock_guard<std::mutex> lock(modelMutex);
+        for (auto const& [idx, notes] : trackData) {
+            root->setProperty("t" + juce::String(idx + 1), toMinifiedVar(idx));
+        }
+        
         file.replaceWithText (juce::JSON::toString(juce::var(root)));
     }
 
 private:
-    std::vector<NoteEvent> notes;
+    std::map<int, std::vector<NoteEvent>> trackData;
     mutable std::mutex modelMutex;
 };
 

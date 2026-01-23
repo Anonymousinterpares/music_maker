@@ -41,11 +41,11 @@ MainComponent::MainComponent()
             double quantizedBeat = std::round(rawBeat * 4.0) / 4.0;
 
             if (type == "add") {
-                model.addNote({ note, 0.8f, quantizedBeat, 1.0 });
-                RealTimeLogger::log("Grid Add: " + juce::String(note) + " at " + juce::String(quantizedBeat, 2));
+                model.addNote(selectedTrackIndex, { note, 0.8f, quantizedBeat, 1.0 });
+                RealTimeLogger::log("Grid Add to Track " + juce::String(selectedTrackIndex + 1) + ": " + juce::String(note) + " at " + juce::String(quantizedBeat, 2));
             } else if (type == "remove") {
-                model.removeNote(note, quantizedBeat);
-                RealTimeLogger::log("Grid Remove: " + juce::String(note) + " at " + juce::String(quantizedBeat, 2));
+                model.removeNote(selectedTrackIndex, note, quantizedBeat);
+                RealTimeLogger::log("Grid Remove from Track " + juce::String(selectedTrackIndex + 1) + ": " + juce::String(note) + " at " + juce::String(quantizedBeat, 2));
             }
         })
         .withEventListener ("audioDeviceEvent", [this] (juce::var params) {
@@ -177,24 +177,27 @@ void MainComponent::getNextAudioBlock (const juce::AudioSourceChannelInfo& buffe
 
     if (transport.getIsPlaying())
     {
-        if (auto* track = mixer.getTrack(selectedTrackIndex))
+        for (int i = 0; i < mixer.getNumTracks(); ++i)
         {
-            if (auto* inst = dynamic_cast<InstrumentTrack*>(track))
+            if (auto* track = mixer.getTrack(i))
             {
-                if (auto* synth = dynamic_cast<InternalSynthProcessor*>(inst->getProcessor()))
+                if (auto* inst = dynamic_cast<InstrumentTrack*>(track))
                 {
-                    const auto& notes = model.getNotes();
-                    for (const auto& note : notes)
+                    if (auto* synth = dynamic_cast<InternalSynthProcessor*>(inst->getProcessor()))
                     {
-                        bool noteStarted = (note.startBeat >= beatBefore && note.startBeat < beatAfter);
-                        if (beatAfter < beatBefore) noteStarted = (note.startBeat >= beatBefore || note.startBeat < beatAfter);
-                        if (noteStarted) synth->noteOn (note.note, note.velocity);
+                        const auto& notes = model.getNotes(i);
+                        for (const auto& note : notes)
+                        {
+                            bool noteStarted = (note.startBeat >= beatBefore && note.startBeat < beatAfter);
+                            if (beatAfter < beatBefore) noteStarted = (note.startBeat >= beatBefore || note.startBeat < beatAfter);
+                            if (noteStarted) synth->noteOn (note.note, note.velocity);
 
-                        double endBeat = note.startBeat + note.durationBeats;
-                        if (endBeat >= 16.0) endBeat -= 16.0;
-                        bool noteEnded = (endBeat >= beatBefore && endBeat < beatAfter);
-                        if (beatAfter < beatBefore) noteEnded = (endBeat >= beatBefore || endBeat < beatAfter);
-                        if (noteEnded) synth->noteOff (note.note, 0.0f, true);
+                            double endBeat = note.startBeat + note.durationBeats;
+                            if (endBeat >= 16.0) endBeat -= 16.0;
+                            bool noteEnded = (endBeat >= beatBefore && endBeat < beatAfter);
+                            if (beatAfter < beatBefore) noteEnded = (endBeat >= beatBefore || endBeat < beatAfter);
+                            if (noteEnded) synth->noteOff (note.note, 0.0f, true);
+                        }
                     }
                 }
             }
@@ -246,10 +249,10 @@ void MainComponent::postMidiToEngine (const juce::MidiMessage& message)
                 double duration = end - start;
                 if (duration < 0.05) duration = 0.1;
 
-                model.addNote({ n, vel, start, duration });
+                model.addNote(selectedTrackIndex, { n, vel, start, duration });
                 activeRecordingNotes.erase(n);
                 
-                RealTimeLogger::log("Captured: " + juce::String(n) + " @ beat " + juce::String(start, 2));
+                RealTimeLogger::log("Track " + juce::String(selectedTrackIndex + 1) + " Captured: " + juce::String(n) + " @ beat " + juce::String(start, 2));
             }
         }
     }
@@ -313,12 +316,11 @@ juce::String MainComponent::getFullProjectJson()
 {
     juce::DynamicObject::Ptr obj = new juce::DynamicObject();
     obj->setProperty("bpm", transport.getBpm());
-    juce::DynamicObject::Ptr synthParams = new juce::DynamicObject();
-    synthParams->setProperty("osc", currentOscType); 
-    synthParams->setProperty("cut", currentCutoff); 
-    synthParams->setProperty("res", currentRes);
-    obj->setProperty("synth", juce::var(synthParams.get()));
-    obj->setProperty("t1", model.toMinifiedVar());
+    
+    for (int i = 0; i < mixer.getNumTracks(); ++i) {
+        obj->setProperty("t" + juce::String(i + 1), model.toMinifiedVar(i));
+    }
+    
     return juce::JSON::toString(juce::var(obj.get()));
 }
 
@@ -327,14 +329,19 @@ void MainComponent::loadFullProjectJson(const juce::String& json)
     auto var = juce::JSON::parse(json);
     if (var.isObject()) {
         if (var.hasProperty("bpm")) transport.setBpm(var["bpm"]);
-        if (var.hasProperty("synth")) {
-            auto s = var["synth"];
-            if (s.hasProperty("osc")) currentOscType = s["osc"];
-            if (s.hasProperty("cut")) currentCutoff = s["cut"];
-            if (s.hasProperty("res")) currentRes = s["res"];
-            updateSynthParams();
+        
+        model.clear();
+        if (auto* dynObj = var.getDynamicObject())
+        {
+            auto& props = dynObj->getProperties();
+            for (int i = 1; i <= 32; ++i) { 
+                juce::String trackKey = "t" + juce::String(i);
+                if (props.contains(trackKey)) {
+                    model.fromMinifiedVar(i - 1, props[trackKey]);
+                }
+            }
         }
-        if (var.hasProperty("t1")) model.fromMinifiedVar(var["t1"]);
+        
         RealTimeLogger::log("Project Loaded via JSON");
     }
 }
@@ -438,7 +445,7 @@ void MainComponent::timerCallback()
     obj->setProperty ("playing", transport.getIsPlaying());
     
     juce::Array<juce::var> notesArray;
-    for (const auto& n : model.getNotes()) {
+    for (const auto& n : model.getNotes(selectedTrackIndex)) {
         juce::DynamicObject::Ptr nObj = new juce::DynamicObject();
         nObj->setProperty("n", n.note); 
         nObj->setProperty("s", n.startBeat); 
