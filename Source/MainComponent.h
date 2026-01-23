@@ -34,10 +34,6 @@ private:
     Mixer mixer;
     int selectedTrackIndex = 0;
     
-    float currentCutoff = 2000.0f;
-    float currentRes = 0.7f;
-    int currentOscType = 1;
-
     // Sequencing
     Transport transport;
     ProjectModel model;

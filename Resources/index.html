@@ -276,6 +276,7 @@
         let lastTrackState = "";
 
         window.onUpdate = (msg) => {
+            const trackChanged = (msg.selectedTrack !== state.selectedTrack);
             state.beat = msg.beat; state.playing = msg.playing; state.notes = msg.notes;
             state.tracks = msg.tracks || [];
             state.selectedTrack = msg.selectedTrack !== undefined ? msg.selectedTrack : 0;
@@ -284,6 +285,14 @@
             clock.innerText = `${Math.floor(b/4)+1}.${(b%4)+1}.${Math.floor((state.beat%1)*100).toString().padStart(2,'0')}`;
             document.getElementById('play-btn').classList.toggle('active', state.playing);
             if(msg.logs) addLogs(msg.logs);
+
+            // Update global knobs if track changed
+            if (trackChanged && state.tracks[state.selectedTrack]) {
+                const t = state.tracks[state.selectedTrack];
+                if (t.osc !== undefined) document.getElementById('osc').value = t.osc;
+                if (t.cutoff !== undefined) document.getElementById('cutoff').value = t.cutoff;
+                if (t.res !== undefined) document.getElementById('res').value = t.res;
+            }
 
             // Only re-render track list if state changed to prevent click-stealing
             const currentState = JSON.stringify(state.tracks) + state.selectedTrack;

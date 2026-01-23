@@ -62,6 +62,16 @@ public:
             delete inst;
     }
 
+    void setParams (int osc, float cut, float res) {
+        oscType = osc;
+        cutoff = cut;
+        resonance = res;
+    }
+
+    int getOscType() const { return oscType; }
+    float getCutoff() const { return cutoff; }
+    float getResonance() const { return resonance; }
+
     void prepareToPlay (double sampleRate, int samplesPerBlock) override
     {
         if (auto* inst = instrument.load())
@@ -112,4 +122,8 @@ public:
 private:
     std::atomic<juce::AudioProcessor*> instrument { nullptr };
     juce::OwnedArray<juce::AudioProcessor> deletionQueue; // Simple way to defer deletion
+
+    int oscType = 1;
+    float cutoff = 2000.0f;
+    float resonance = 0.7f;
 };

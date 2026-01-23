@@ -59,10 +59,21 @@ MainComponent::MainComponent()
         .withEventListener ("parameterEvent", [this] (juce::var params) {
             juce::String name = params["name"];
             float val = (float)params["value"];
-            if (name == "cutoff") currentCutoff = val;
-            else if (name == "res") currentRes = val;
-            else if (name == "osc") currentOscType = (int)val;
-            updateSynthParams();
+            
+            if (auto* track = mixer.getTrack(selectedTrackIndex)) {
+                if (auto* inst = dynamic_cast<InstrumentTrack*>(track)) {
+                    int osc = inst->getOscType();
+                    float cut = inst->getCutoff();
+                    float res = inst->getResonance();
+
+                    if (name == "cutoff") cut = val;
+                    else if (name == "res") res = val;
+                    else if (name == "osc") osc = (int)val;
+                    
+                    inst->setParams(osc, cut, res);
+                    updateSynthParams();
+                }
+            }
         })
         .withEventListener ("transportEvent", [this] (juce::var params) {
             juce::String cmd = params["command"];
@@ -290,7 +301,7 @@ void MainComponent::updateSynthParams()
     if (auto* track = mixer.getTrack(selectedTrackIndex)) {
         if (auto* inst = dynamic_cast<InstrumentTrack*>(track)) {
             if (auto* synth = dynamic_cast<InternalSynthProcessor*>(inst->getProcessor())) {
-                synth->updateParameters (currentOscType, currentCutoff, currentRes);
+                synth->updateParameters (inst->getOscType(), inst->getCutoff(), inst->getResonance());
             }
         }
     }
@@ -318,7 +329,18 @@ juce::String MainComponent::getFullProjectJson()
     obj->setProperty("bpm", transport.getBpm());
     
     for (int i = 0; i < mixer.getNumTracks(); ++i) {
-        obj->setProperty("t" + juce::String(i + 1), model.toMinifiedVar(i));
+        juce::DynamicObject::Ptr tData = new juce::DynamicObject();
+        tData->setProperty("notes", model.toMinifiedVar(i));
+        
+        if (auto* track = mixer.getTrack(i)) {
+            if (auto* inst = dynamic_cast<InstrumentTrack*>(track)) {
+                tData->setProperty("osc", inst->getOscType());
+                tData->setProperty("cut", inst->getCutoff());
+                tData->setProperty("res", inst->getResonance());
+            }
+        }
+        
+        obj->setProperty("t" + juce::String(i + 1), juce::var(tData.get()));
     }
     
     return juce::JSON::toString(juce::var(obj.get()));
@@ -337,11 +359,27 @@ void MainComponent::loadFullProjectJson(const juce::String& json)
             for (int i = 1; i <= 32; ++i) { 
                 juce::String trackKey = "t" + juce::String(i);
                 if (props.contains(trackKey)) {
-                    model.fromMinifiedVar(i - 1, props[trackKey]);
+                    auto tVar = props[trackKey];
+                    if (tVar.isObject()) {
+                        model.fromMinifiedVar(i - 1, tVar["notes"]);
+                        
+                        if (auto* track = mixer.getTrack(i - 1)) {
+                            if (auto* inst = dynamic_cast<InstrumentTrack*>(track)) {
+                                int osc = tVar.hasProperty("osc") ? (int)tVar["osc"] : 1;
+                                float cut = tVar.hasProperty("cut") ? (float)tVar["cut"] : 2000.0f;
+                                float res = tVar.hasProperty("res") ? (float)tVar["res"] : 0.7f;
+                                inst->setParams(osc, cut, res);
+                            }
+                        }
+                    } else {
+                        // Legacy support for plain note arrays
+                        model.fromMinifiedVar(i - 1, tVar);
+                    }
                 }
             }
         }
         
+        updateSynthParams();
         RealTimeLogger::log("Project Loaded via JSON");
     }
 }
@@ -465,6 +503,13 @@ void MainComponent::timerCallback()
             tObj->setProperty("pan", t->getPan());
             tObj->setProperty("mute", t->getIsMuted());
             tObj->setProperty("solo", t->getIsSoloed());
+
+            if (auto* inst = dynamic_cast<InstrumentTrack*>(t)) {
+                tObj->setProperty("osc", inst->getOscType());
+                tObj->setProperty("cutoff", inst->getCutoff());
+                tObj->setProperty("res", inst->getResonance());
+            }
+
             tracksArray.add(juce::var(tObj.get()));
         }
     }
